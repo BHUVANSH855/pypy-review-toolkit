@@ -339,6 +339,24 @@ def build_pypy_envelope(
         "file_counts_by_layer": discovery.get("file_counts_by_layer", {}),
         "lines_by_layer": discovery.get("lines_by_layer", {}),
     }
+    if not pypy_info["tree_sitter_available"]:
+        # Without tree-sitter the ast-first parser has no fallback, and PyPy's
+        # RPython source is Python 2 syntax on every branch -- including the
+        # py3.x ones, where only the *implemented* language is Python 3. Every
+        # file that fails ast.parse() is skipped in silence, so a scanner
+        # reports a clean, confident, and materially incomplete result.
+        #
+        # Measured on a real checkout at py3.11 (fe2af5843a), share of .py
+        # files that fail ast.parse() under CPython 3.14:
+        #   pypy/interpreter 29.0%   rpython/rlib   26.1%   pypy/objspace 25.9%
+        #   rpython/memory   16.1%   pypy/module    14.8%   lib_pypy      10.6%
+        #   rpython/jit       8.5%
+        pypy_info["degraded_parse_mode"] = (
+            "tree-sitter is NOT installed: files using Python 2 syntax fail "
+            "ast.parse() and are skipped silently. Coverage is incomplete and "
+            "the finding counts below UNDER-report. Install with "
+            "`pip install -r requirements.txt` (tree_sitter, tree_sitter_python)."
+        )
     by_type: dict[str, int] = {}
     by_classification: dict[str, int] = {}
     for finding in findings:

@@ -1,0 +1,9 @@
+# Required. Without these the ast-first parser in pypy_utils.py has no
+# fallback, and PyPy's RPython source -- which is Python 2 syntax on every
+# branch, including the py3.x ones -- fails ast.parse() and is skipped in
+# silence. Measured on a real checkout: 8.5%-29.0% of .py files per layer.
+tree_sitter
+tree_sitter_python
+
+# Test suite only.
+pytest

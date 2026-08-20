@@ -50,6 +50,37 @@ fusil-on-PyPy).
 **35 tests passing**, including regression fixtures for every real bug
 found while validating each scanner against the actual checkout.
 
+## Requirements
+
+```
+pip install -r requirements.txt
+```
+
+**tree-sitter is required, not optional.** PyPy's RPython source is written in
+Python 2 syntax on *every* branch -- the py3.x branches implement Python 3, they
+are not written in it -- so a meaningful share of the tree fails
+`ast.parse()` under a Python 3 host. Without `tree_sitter` +
+`tree_sitter_python` installed, `pypy_utils.py` has no fallback parser and those
+files are skipped **silently**: scanners return a clean, confident, materially
+incomplete result.
+
+Measured on a real checkout at `py3.11` (`fe2af5843a`), share of `.py` files
+failing `ast.parse()` under CPython 3.14:
+
+| layer | files | ast.parse() failures |
+|---|---|---|
+| `pypy/interpreter` | 124 | **29.0%** |
+| `rpython/rlib` | 253 | **26.1%** |
+| `pypy/objspace` | 108 | **25.9%** |
+| `rpython/memory` | 62 | 16.1% |
+| `pypy/module` | 820 | 14.8% |
+| `lib_pypy` | 189 | 10.6% |
+| `rpython/jit` | 635 | 8.5% |
+
+When tree-sitter is missing, every scanner's envelope now carries a
+`degraded_parse_mode` warning in `pypy_info` saying so, rather than leaving the
+gap to be inferred from a `"tree_sitter_available": false` flag.
+
 ## Install
 
 Not yet published to a marketplace. For local development:
