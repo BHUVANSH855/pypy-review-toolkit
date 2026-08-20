@@ -164,24 +164,38 @@ def _git_branch_and_commit(root: Path) -> tuple[str | None, str | None]:
 
 
 def _pypy_version_string(root: Path) -> str | None:
-    """Best-effort PyPy version string from pypy/tool/version.py, if derivable.
+    """Best-effort PyPy version string from pypy/module/sys/version.py.
 
-    This file typically defines version numbers as literals rather than a
-    single importable string, so this is a coarse grep, not a real parse --
-    good enough to flag an obvious mismatch, not a substitute for actually
-    checking out the right tag/branch per §9.4.
+    That file defines version numbers as literals rather than a single
+    importable string, so this is a coarse grep, not a real parse -- good
+    enough to flag an obvious mismatch, not a substitute for actually checking
+    out the right tag/branch per §9.4.
+
+    Returns ``"<cpython-version> [PyPy <pypy-version>]"`` when both literals are
+    present, the CPython tuple alone when only that one is, else ``None``.
+
+    The path matters: ``pypy/tool/version.py`` (previously read here) does not
+    exist in any PyPy checkout -- ``CPYTHON_VERSION``/``PYPY_VERSION`` live in
+    ``pypy/module/sys/version.py``. Reading the wrong path made this return
+    ``None`` unconditionally, which silently disabled the one field §9.4 added
+    to catch a branch mismatch. A review of ``main`` (Python 2.7.18) mistaken
+    for the 3.11 line is exactly the failure this is meant to prevent.
     """
-    version_file = root / "pypy" / "tool" / "version.py"
+    version_file = root / "pypy" / "module" / "sys" / "version.py"
     if not version_file.is_file():
         return None
     try:
         text = version_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    match = re.search(r"CPYTHON_VERSION\s*=\s*\(([^)]+)\)", text)
-    if match:
-        return match.group(1).replace(" ", "")
-    return None
+    cpython = re.search(r"^CPYTHON_VERSION\s*=\s*\(([^)]+)\)", text, re.MULTILINE)
+    if not cpython:
+        return None
+    hint = cpython.group(1).replace(" ", "")
+    pypy = re.search(r"^PYPY_VERSION\s*=\s*\(([^)]+)\)", text, re.MULTILINE)
+    if pypy:
+        hint = f"{hint} [PyPy {pypy.group(1).replace(' ', '')}]"
+    return hint
 
 
 def discover(target: str) -> dict:
