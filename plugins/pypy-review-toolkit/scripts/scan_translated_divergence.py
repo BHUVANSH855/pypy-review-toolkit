@@ -109,6 +109,9 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
     - translated low-level casts/operations with a Python-side emulation
       counterpart;
     - translated GC/runtime operations with a Python-side test representation.
+
+    These are legitimate translated/untranslated implementation boundaries,
+    not evidence of an accidental control-flow mismatch.
     """
     call_names = _call_names_in(body)
 
@@ -128,7 +131,7 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                     return True
 
                 # These are commonly used to cross the translated/untranslated
-                # representation boundary.  They are especially common in
+                # representation boundary. They are especially common in
                 # RPython low-level and GC helpers.
                 if func.attr in {
                     "cast_ptr_to_int",
@@ -160,6 +163,11 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                 }:
                     return True
 
+                # PyPy uses explicitly named untranslated helpers as the
+                # Python-side implementation of translated operations.
+                if func.id.endswith("_untranslated"):
+                    return True
+
         if isinstance(node, ast.Name):
             if node.id in {
                 "AssertGreenFailed",
@@ -171,6 +179,10 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
             if node.attr in {
                 "_nontranslated_run_directly",
             }:
+                return True
+
+            # Also recognize explicitly untranslated helper methods.
+            if node.attr.endswith("_untranslated"):
                 return True
 
     return False

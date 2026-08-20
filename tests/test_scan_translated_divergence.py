@@ -150,6 +150,24 @@ def test_unrelated_different_calls_remain_consider():
     assert "different substantive functions" in reason
 
 
+def test_translation_boundary_untranslated_helper_is_not_fix():
+    if_body = _body(
+        """
+        return llmemory.cast_adr_to_int(addr)
+        """
+    )
+    else_body = _body(
+        """
+        return _start_of_page_untranslated(addr, page_size)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
 def test_unrecognized_control_flow_difference_remains_fix():
     if_body = _body(
         """
