@@ -1,15 +1,44 @@
 {
-  "_comment": "Curated, not exhaustive. Each entry is a real RPython helper with a precondition its signature doesn't enforce -- calling it with an out-of-precondition value produces PyPy's generic 'SystemError: unexpected internal exception (please report a bug)' leak instead of a proper app-level exception. Seeded from danzin's fusil findings (docs/PYPY_FINDINGS_REPORT.md); grow this list from future confirmed bugs, not speculation. See design doc §9.1.",
+  "_comment": "Curated, not exhaustive. Each entry is a real RPython helper with a precondition its signature doesn't enforce -- calling it with an out-of-precondition value produces PyPy's generic 'SystemError: unexpected internal exception (please report a bug)' leak instead of a proper app-level exception. Seeded from danzin's fusil findings (docs/PYPY_FINDINGS_REPORT.md); grow this list from future confirmed bugs, not speculation. See design doc \u00a79.1. A helper whose precondition has independent clauses declares them in `clauses`: each is discharged separately, by a call-site keyword (`discharged_by_kwarg`), by a proactive text hint, or by a reactive `except` handler -- and a reactive guard counts only when EVERY name in `exception_guard_hints` is handled, since a partial handler is exactly the shape of confirmed bug #3. A call leaving ANY clause undischarged stays CONSIDER -- a range check must not clear a surrogate obligation. Helpers with no `clauses` key keep the original single-clause behaviour.",
   "helpers": [
     {
       "qualname": "rutf8.unichr_as_utf8",
       "source": "rpython/rlib/rutf8.py",
       "precondition": "argument must be <= 0x10FFFF and, unless allow_surrogates=True is passed, not a surrogate (0xD800-0xDFFF)",
-      "confirmed_bug": "struct.unpack('u', b'abcd') -- pypy/module/struct/formatiterator.py's append_utf8 passes r_uint(value) straight through with no range check at all",
+      "confirmed_bug": "struct.unpack('u', b'abcd') -- pypy/module/struct/formatiterator.py's append_utf8 passes r_uint(value) straight through with no range check at all. Second confirmed instance, surrogate clause only: format(0xD800, 'c') / f'{0xD800:c}' -- pypy/objspace/std/newformat.py:847 range-checks 0 <= value <= 0x10FFFF three lines above the call but omits allow_surrogates=True, so the 2048 surrogate codepoints pass the guard and leak SystemError. Reproduced on PyPy 7.3.23 (194f9f44b505); CPython 3.14.4 returns '\\ud800'. Same shape reproduced in pypy/module/_csv/interp_csv.py via csv.reader(iter([]), delimiter='\\ud800').",
       "guard_pattern_hints": [
         "0x10FFFF",
         "0x110000",
         "1114111"
+      ],
+      "exception_guard_hints": [
+        "OutOfRange"
+      ],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0x10FFFF",
+            "0x110000",
+            "1114111"
+          ],
+          "provenance_hints": [
+            "codepoint_at_pos",
+            "codepoints_in_utf8"
+          ]
+        },
+        {
+          "name": "surrogate",
+          "discharged_by_kwarg": "allow_surrogates",
+          "text_hints": [
+            "0xD800",
+            "0xDfff",
+            "0xDFFF",
+            "0xdfff",
+            "55296",
+            "57343"
+          ]
+        }
       ]
     },
     {
@@ -21,6 +50,11 @@
         "< 0",
         ">= 0",
         ".sign"
+      ],
+      "exception_guard_hints": [
+        "InvalidSignednessError",
+        "InvalidEndiannessError",
+        "OverflowError"
       ]
     },
     {
@@ -31,6 +65,11 @@
       "guard_pattern_hints": [
         "< 0",
         ">= 0"
+      ],
+      "exception_guard_hints": [
+        "InvalidSignednessError",
+        "InvalidEndiannessError",
+        "OverflowError"
       ]
     }
   ]
