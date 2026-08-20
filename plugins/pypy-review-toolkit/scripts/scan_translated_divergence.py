@@ -123,6 +123,9 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
             func = node.func
 
             if isinstance(func, ast.Attribute):
+                if func.attr.endswith("_untranslated"):
+                    return True
+
                 if func.attr in {
                     "debug_fatalerror",
                     "debug_print_traceback",
@@ -156,6 +159,15 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                     "_is_pinned",
                     "gc_fq_next_dead",
                     "gc_fq_register",
+                    "malloc",
+                    "raw_malloc_usage",
+                    "sizeof",
+                    "get_llexception",
+                    "_get_standard_error",
+                    "getopnum",
+                    "getopname",
+                    "getattr",
+                    "exc_info",
                 }:
                     return True
 
@@ -170,6 +182,16 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                     "raw_storage_setitem",
                     "_raw_storage_getitem_unchecked",
                     "_raw_storage_setitem_unchecked",
+                }:
+                    return True
+
+                # JIT/debug helpers with deliberately different translated
+                # and untranslated implementations.
+                if func.id in {
+                    "_interpret",
+                    "unboundmethod",
+                    "pypy__cffi_fetch_var",
+                    "CCallback",
                 }:
                     return True
 
@@ -202,9 +224,33 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
             }:
                 return True
 
+        if isinstance(node, ast.Name):
+            # Thread-local helpers have deliberately different translated
+            # and untranslated implementations.
+            if node.id in {
+                "_threadlocalref_seeme",
+                "threadlocalref_get",
+                "threadlocalref_load",
+            }:
+                return True
+
+            # Common Python-side emulation implementations paired with
+            # translated low-level/runtime implementations.
+            if node.id in {
+                "BasicAddressDict",
+                "AddressDict",
+                "unrolling_iteritems",
+                "raw_malloc_usage",
+                "sizeof",
+            }:
+                return True
+
         if isinstance(node, ast.Attribute):
             if node.attr in {
                 "_nontranslated_run_directly",
+                "AddressAsInt",
+                "_addr2name_keys",
+                "_addr2name_values",
             }:
                 return True
 
