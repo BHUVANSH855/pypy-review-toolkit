@@ -146,6 +146,16 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                     "_raw_storage_getitem_unchecked",
                     "_raw_storage_setitem_unchecked",
                     "bare_setarrayitem",
+                    "getraw",
+                    "get_or_make_raw",
+                    "setraw",
+                    "get_ident",
+                    "get_or_make_ident",
+                    "new_handle",
+                    "from_handle",
+                    "_is_pinned",
+                    "gc_fq_next_dead",
+                    "gc_fq_register",
                 }:
                     return True
 
@@ -166,6 +176,23 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
                 # PyPy uses explicitly named untranslated helpers as the
                 # Python-side implementation of translated operations.
                 if func.id.endswith("_untranslated"):
+                    return True
+
+                # GIL and thread-local primitives deliberately use different
+                # translated and untranslated implementations.
+                if func.id in {
+                    "_gil_allocate",
+                    "_gil_release",
+                    "_gil_acquire",
+                    "_gil_yield_thread",
+                    "_gil_get_holder",
+                    "gc_thread_run",
+                    "_after_thread_switch",
+                    "getraw",
+                    "get_or_make_raw",
+                    "get_ident",
+                    "get_or_make_ident",
+                }:
                     return True
 
         if isinstance(node, ast.Name):

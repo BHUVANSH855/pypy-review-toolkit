@@ -168,6 +168,103 @@ def test_translation_boundary_untranslated_helper_is_not_fix():
     assert "translation-boundary" in reason
 
 
+def test_translation_boundary_gil_implementation_is_not_fix():
+    if_body = _body(
+        """
+        _gil_release()
+        """
+    )
+    else_body = _body(
+        """
+        allocate()
+        _emulated_gil_holder.release()
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_thread_local_implementation_is_not_fix():
+    if_body = _body(
+        """
+        return tlfield_thread_ident.getraw()
+        """
+    )
+    else_body = _body(
+        """
+        return thread.get_ident()
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_nonmovable_gcref_handle_is_not_fix():
+    if_body = _body(
+        """
+        return rffi.cast(llmemory.Address, gcref)
+        """
+    )
+    else_body = _body(
+        """
+        ffi = _fetch_ffi()
+        x = gcref._x
+        if not hasattr(x, '__handle'):
+            x.__handle = ffi.new_handle(x)
+        return ffi.cast("intptr_t", x.__handle)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_reveal_gcref_handle_is_not_fix():
+    if_body = _body(
+        """
+        return rffi.cast(llmemory.GCREF, addr)
+        """
+    )
+    else_body = _body(
+        """
+        ffi = _fetch_ffi()
+        x = ffi.from_handle(ffi.cast("void *", addr))
+        return _GcRef(x)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_finalizer_queue_is_not_fix():
+    if_body = _body(
+        """
+        llop.gc_fq_next_dead(GCREF, tag)
+        """
+    )
+    else_body = _body(
+        """
+        return self._queue.popleft()
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
 def test_unrecognized_control_flow_difference_remains_fix():
     if_body = _body(
         """
