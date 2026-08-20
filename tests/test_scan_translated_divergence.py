@@ -77,6 +77,79 @@ def test_translation_boundary_debug_print_traceback_is_not_fix():
     assert "translation-boundary" in reason
 
 
+def test_translation_boundary_low_level_cast_is_not_fix():
+    if_body = _body(
+        """
+        value = lltype.cast_ptr_to_int(gcref)
+        return value
+        """
+    )
+    else_body = _body(
+        """
+        return id(gcref._x)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_gcref_representation_is_not_fix():
+    if_body = _body(
+        """
+        return lltype.cast_opaque_ptr(llmemory.GCREF, x)
+        """
+    )
+    else_body = _body(
+        """
+        return _GcRef(x)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_translation_boundary_raw_storage_operation_is_not_fix():
+    if_body = _body(
+        """
+        return raw_storage_getitem(TP, storage, index)
+        """
+    )
+    else_body = _body(
+        """
+        return _raw_storage_getitem_unchecked(TP, storage, index)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "translation-boundary" in reason
+
+
+def test_unrelated_different_calls_remain_consider():
+    if_body = _body(
+        """
+        return translated_implementation(value)
+        """
+    )
+    else_body = _body(
+        """
+        return python_implementation(value)
+        """
+    )
+
+    classification, reason = _classify_two_arm(if_body, else_body)
+
+    assert classification == "CONSIDER"
+    assert "different substantive functions" in reason
+
+
 def test_unrecognized_control_flow_difference_remains_fix():
     if_body = _body(
         """

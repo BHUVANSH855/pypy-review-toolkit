@@ -105,10 +105,10 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
     - low-level ``llop`` operations used only by translated code;
     - ``AssertGreenFailed``-style Python-side test behavior;
     - explicitly non-translatable helper calls;
-    - untranslated emulation helpers.
-
-    These are legitimate translated/untranslated implementation boundaries,
-    not evidence of an accidental control-flow mismatch.
+    - untranslated emulation helpers;
+    - translated low-level casts/operations with a Python-side emulation
+      counterpart;
+    - translated GC/runtime operations with a Python-side test representation.
     """
     call_names = _call_names_in(body)
 
@@ -118,11 +118,45 @@ def _is_translation_boundary_arm(body: list[ast.stmt]) -> bool:
     for node in ast.walk(ast.Module(body=body, type_ignores=[])):
         if isinstance(node, ast.Call):
             func = node.func
+
             if isinstance(func, ast.Attribute):
                 if func.attr in {
                     "debug_fatalerror",
                     "debug_print_traceback",
                     "gc_fq_register",
+                }:
+                    return True
+
+                # These are commonly used to cross the translated/untranslated
+                # representation boundary.  They are especially common in
+                # RPython low-level and GC helpers.
+                if func.attr in {
+                    "cast_ptr_to_int",
+                    "cast_opaque_ptr",
+                    "cast_instance_to_base_ptr",
+                    "cast_base_ptr_to_instance",
+                    "cast_gcref_to_instance",
+                    "cast_instance_to_gcref",
+                    "cast_gcref_to_int",
+                    "raw_storage_getitem",
+                    "raw_storage_setitem",
+                    "_raw_storage_getitem_unchecked",
+                    "_raw_storage_setitem_unchecked",
+                    "bare_setarrayitem",
+                }:
+                    return True
+
+            if isinstance(func, ast.Name):
+                if func.id in {
+                    "cast_instance_to_gcref",
+                    "cast_gcref_to_int",
+                    "try_cast_gcref_to_instance",
+                    "cast_base_ptr_to_instance",
+                    "cast_instance_to_base_ptr",
+                    "raw_storage_getitem",
+                    "raw_storage_setitem",
+                    "_raw_storage_getitem_unchecked",
+                    "_raw_storage_setitem_unchecked",
                 }:
                     return True
 
@@ -159,10 +193,11 @@ def _classify_two_arm(
     if_shape = _arm_shape(if_body)
     else_shape = _arm_shape(else_body)
 
+    if_boundary = _is_translation_boundary_arm(if_body)
+    else_boundary = _is_translation_boundary_arm(else_body)
+
     if if_shape["has_return_or_raise"] != else_shape["has_return_or_raise"]:
-        if _is_translation_boundary_arm(if_body) or _is_translation_boundary_arm(
-            else_body
-        ):
+        if if_boundary or else_boundary:
             return (
                 "CONSIDER",
                 "arms have inconsistent return/raise control-flow shape, "
@@ -174,6 +209,14 @@ def _classify_two_arm(
 
     if if_shape["substantive_calls"] and else_shape["substantive_calls"]:
         if if_shape["substantive_calls"] != else_shape["substantive_calls"]:
+            if if_boundary or else_boundary:
+                return (
+                    "CONSIDER",
+                    "arms call different substantive functions, but one arm "
+                    "matches a recognized translation-boundary pattern; verify "
+                    "that the alternate implementation is intentional",
+                )
+
             return (
                 "CONSIDER",
                 "arms call different substantive functions "
