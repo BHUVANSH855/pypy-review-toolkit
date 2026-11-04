@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "_comment": "Machine-readable catalog of PyPy's five confirmed bug shapes. Confirmed instances reference bug IDs in pypy_known_bugs.tsv. Content derives from docs/pypy-review-toolkit-design.md §0.1 and docs/PYPY_FINDINGS_REPORT.md — update this file whenever a new confirmed instance is added to pypy_known_bugs.tsv.",
+  "shapes": [
+    {
+      "id": "SHAPE-A",
+      "name": "unvalidated-rpython-helper-call",
+      "description": "A user-controlled value flows from app level via unwrap_spec into an RPython rlib helper without the helper's stated precondition being verified at the call site. The rlib helper raises an internal RPython exception on violation, which propagates as PyPy's generic 'SystemError: unexpected internal exception (please report a bug)' rather than the app-level exception CPython would raise.",
+      "confirmed_instances": ["PYPY-FUZZ-002", "PYPY-FUZZ-003", "PYPY-REV-004", "PYPY-REV-005", "PYPY-REV-009", "PYPY-REV-010", "PYPY-REV-011"],
+      "scanner": "scan_unvalidated_helper_calls.py",
+      "data_file": "sensitive_rpython_helpers.json",
+      "stderr_oracle": "unexpected internal exception (please report a bug)",
+      "default_classification": "FIX"
+    },
+    {
+      "id": "SHAPE-B",
+      "name": "cffi-free-pairing",
+      "description": "A raw free() call in lib_pypy/ CFFI code without a verified paired allocation, or a check-then-free pattern where the lock protecting the field is released between the check and the free, opening a TOCTOU window in a multi-threaded translated build.",
+      "confirmed_instances": ["PYPY-FUZZ-004"],
+      "scanner": "scan_free_pairing.py",
+      "data_file": null,
+      "stderr_oracle": null,
+      "default_classification": "FIX"
+    },
+    {
+      "id": "SHAPE-C",
+      "name": "ffi-nonexistent-attribute",
+      "description": "An attribute access on the cffi ffi object where the attribute name does not exist in the cffi public API surface. The confirmed instance is ffi.NONE (should be ffi.NULL) on an error path — the AttributeError is raised during exception handling, masking the original error and typically producing a crash rather than a clean exception.",
+      "confirmed_instances": ["PYPY-FUZZ-004"],
+      "scanner": "scan_free_pairing.py",
+      "data_file": "lib_pypy_cffi_allowlist.json",
+      "stderr_oracle": null,
+      "default_classification": "FIX"
+    },
+    {
+      "id": "SHAPE-D",
+      "name": "missing-sibling-guard",
+      "description": "N exposed methods on a W_ class all dereference the same field. N-1 of them guard the dereference with _check_attached, _check_closed, or an equivalent is-None check. The one unguarded method crashes when the field is None after detach() or close(). This is the within-class version of the guard-consistency problem; see also Shape E for the cross-class version.",
+      "confirmed_instances": ["PYPY-FUZZ-005", "PYPY-REV-001", "PYPY-REV-002"],
+      "scanner": "scan_sibling_guard_consistency.py",
+      "data_file": null,
+      "stderr_oracle": null,
+      "default_classification": "FIX"
+    },
+    {
+      "id": "SHAPE-E",
+      "name": "incomplete-fix-wrapper-stack",
+      "description": "A guard, null-check, or fix applied to method M of class A in a multi-layer wrapper stack (e.g., BufferedReader in _io) but not propagated to the analogous method M of sibling class B (e.g., TextIOWrapper), which accesses the same field in the same pattern. Often manifests after a partial fix is committed: one layer is fixed, the sibling layer remains vulnerable.",
+      "confirmed_instances": ["PYPY-FUZZ-005", "PYPY-REV-003", "PYPY-REV-008"],
+      "scanner": "scan_cross_class_method_guard.py",
+      "data_file": null,
+      "stderr_oracle": null,
+      "default_classification": "FIX"
+    }
+  ]
+}

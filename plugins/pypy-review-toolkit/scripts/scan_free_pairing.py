@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -37,10 +38,32 @@ from scan_common import (  # noqa: E402
 from pypy_utils import parse_rpython_file  # noqa: E402
 from discover_pypy import build_pypy_envelope, discover  # noqa: E402
 
-# Conservative allowlist of real cffi ffi.* API members, kept only for
-# documentation purposes -- the actual check (_check_suspicious_ffi_attrs)
-# no longer uses this. See its docstring for the corrected approach.
-_KNOWN_FFI_ATTRS_UNUSED = frozenset({"NULL"})
+# Minimal fallback used when the data file cannot be loaded.
+_FALLBACK_FFI_ATTRS = frozenset({"NULL"})
+
+# Path to the canonical cffi allowlist data file, relative to this script.
+_ALLOWLIST_PATH = Path(__file__).resolve().parent.parent / "data" / "lib_pypy_cffi_allowlist.json"
+
+# Loaded at module startup; _cffi_allowlist_warning is non-None if the file
+# could not be loaded (surfaced in the scan envelope as a warning).
+_cffi_allowlist_warning: str | None = None
+
+try:
+    with _ALLOWLIST_PATH.open(encoding="utf-8") as _f:
+        _raw = json.load(_f)
+    _KNOWN_FFI_ATTRS: frozenset[str] = frozenset(_raw["known_good_attributes"])
+except FileNotFoundError:
+    _KNOWN_FFI_ATTRS = _FALLBACK_FFI_ATTRS
+    _cffi_allowlist_warning = (
+        f"lib_pypy_cffi_allowlist.json not found at {_ALLOWLIST_PATH}; "
+        "using minimal fallback set — Shape C detection may miss additional known-good attributes"
+    )
+except (KeyError, json.JSONDecodeError, OSError) as _exc:
+    _KNOWN_FFI_ATTRS = _FALLBACK_FFI_ATTRS
+    _cffi_allowlist_warning = (
+        f"Failed to load lib_pypy_cffi_allowlist.json ({_exc}); "
+        "using minimal fallback set — Shape C detection may miss additional known-good attributes"
+    )
 
 
 def _finding(
@@ -63,28 +86,24 @@ def _finding(
 
 
 def _check_suspicious_ffi_attrs(tree: ast.Module) -> list[tuple[ast.Attribute, str]]:
-    """Flag `ffi.<UPPERCASE_NAME>` accesses where the name isn't a known real cffi constant.
+    """Flag `ffi.<UPPERCASE_NAME>` accesses where the name isn't a known-good cffi attribute.
 
-    The original approach -- flagging any ffi.X where X isn't in a broad
-    allowlist -- produced 120+ false positives on real cffi API methods
-    (ffi.cdef, ffi.set_source, ffi.compile, ffi.callback, etc.) that simply
-    weren't in the list. cffi's actual API surface is too large and variable
-    to maintain as a static allowlist.
-
-    The real bug's shape is much narrower: `ffi.NONE` is an ALL-CAPS name
-    that looks like a constant, but the only real all-caps cffi constant in
-    common use is `ffi.NULL`. Restricting to all-caps names eliminates the
-    false positives (ffi.cdef is lowercase) while still catching the exact
-    confirmed bug and any similar typo on a constant-looking name.
+    Strategy: flag any all-caps ffi attribute that is NOT in the loaded
+    ``_KNOWN_FFI_ATTRS`` allowlist (sourced from lib_pypy_cffi_allowlist.json).
+    All-caps names look like constants; cffi's one real constant in common use
+    is ffi.NULL. Anything else that is all-caps is almost certainly a typo
+    (like the confirmed bug ffi.NONE). Lowercase API members (ffi.cdef,
+    ffi.set_source, ffi.compile, ffi.callback, …) are excluded from scanning
+    entirely because the false-positive rate on them is too high without
+    full cffi API version resolution.
     """
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "ffi":
             attr = node.attr
-            # Only flag all-caps names that look like constants -- ffi.NULL
-            # is the one real cffi constant in common use; anything else
-            # that's all-caps is almost certainly a typo (like ffi.NONE).
-            if attr.isupper() and attr != "NULL":
+            # Only flag all-caps names that look like constants and are not
+            # in the known-good set from lib_pypy_cffi_allowlist.json.
+            if attr.isupper() and attr not in _KNOWN_FFI_ATTRS:
                 found.append((node, attr))
     return found
 
@@ -228,7 +247,10 @@ def analyze(target: str, *, max_files: int = 0) -> dict:
         findings.extend(_check_file(path, project_root))
 
     findings = deduplicate_findings(findings)
-    return build_pypy_envelope(discovery, findings, functions_analyzed=len(non_test_files))
+    envelope = build_pypy_envelope(discovery, findings, functions_analyzed=len(non_test_files))
+    if _cffi_allowlist_warning:
+        envelope.setdefault("warnings", []).append(_cffi_allowlist_warning)
+    return envelope
 
 
 def main() -> None:
