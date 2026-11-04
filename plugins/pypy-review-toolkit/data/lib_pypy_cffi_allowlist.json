@@ -1,0 +1,18 @@
+{
+  "_comment": "Known-good attributes of the cffi ffi object. Any ffi.<name> access where <name> is NOT in this list, appearing on an error path (except/finally block), is a Shape C candidate. The confirmed bug is ffi.NONE — cffi has ffi.NULL, not ffi.NONE. Update this list against the cffi version PyPy vendors when cffi is upgraded.",
+  "cffi_version_note": "Verified against cffi 1.17.x (vendored in PyPy 7.3.x)",
+  "known_good_attributes": [
+    "NULL", "new", "new_allocator", "new_function_type",
+    "cast", "sizeof", "alignof", "offsetof",
+    "string", "unpack", "buffer",
+    "gc", "gc_alloc",
+    "typeof", "getctype",
+    "addressof", "from_buffer", "from_buffer_copy", "from_handle",
+    "callback",
+    "dlopen", "dlclose", "cdef", "include", "verify",
+    "errno", "set_errno", "getwinerror",
+    "memmove", "memcpy", "release",
+    "init_once", "embedding_init_code", "embedding_api",
+    "compile", "set_source", "set_unicode_literals"
+  ]
+}
