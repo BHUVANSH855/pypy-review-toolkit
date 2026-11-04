@@ -21,7 +21,8 @@ def _write(tmp_path: Path, source: str) -> Path:
 
 
 def test_ffi_none_is_flagged():
-    # The exact confirmed bug: ffi.NONE after a free(), should be ffi.NULL.
+    # A suspicious CFFI attribute is detected; reachability and impact
+    # must be established separately by source-level investigation.
     tree = _parse("self._p = ffi.NONE")
     results = _check_suspicious_ffi_attrs(tree)
     assert len(results) == 1

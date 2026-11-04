@@ -1,45 +1,18 @@
 #!/usr/bin/env python3
-"""Detect raw free()-pairing hazards and suspicious ffi attribute access in lib_pypy/.
+"""Detect raw free()-pairing hazards and suspicious ffi attribute access.
 
-Shape B + C from design doc §0.1/§9.3, danzin's confirmed bug #4:
-`lib_pypy/_lzma.py`'s `LZMADecompressor` has two independent defects,
-confirmed against the real source at `release-pypy3.11-v7.3.23`:
+The scanner checks selected patterns in lib_pypy/:
 
-  (a) `post_decompress_avail_data` (line 562): after `m.free(self._input_buffer)`,
-      assigns `self._input_buffer = ffi.NONE` -- **`ffi.NONE` does not exist**.
-      The very next check, three lines later, is `if self._input_buffer is
-      ffi.NULL:`, confirming `ffi.NULL` was intended. The typo means the
-      assignment raises `AttributeError`, leaving `self._input_buffer`
-      pointing at freed memory.
-  (b) `clear_input_buffer` (line 574): an unlocked
-      `if self._input_buffer is not ffi.NULL: m.free(...)` -- the class has
-      `self.lock` and uses it elsewhere (`decompress()` at line 595 in the
-      real source), but this entry point doesn't take it, so two threads can
-      both pass the NULL check and both free.
+1. Uppercase ffi attribute access other than ffi.NULL. This is a heuristic
+   intended to identify constant-like names that may be misspelled.
+2. free() calls outside a syntactically enclosing self.lock block in classes
+   that use self.lock elsewhere.
 
-**Deliberately narrow, per the design doc's honesty standard**: this is one
-confirmed bug covering both sub-shapes at once, not two independently
-confirmed instances the way `scan_unvalidated_helper_calls.py`'s two
-helpers are -- output here is CONSIDER only, never escalated based on this
-scanner's say-so alone. Scoped to `lib_pypy/` specifically (confirmed real
-via `discover_pypy.py`'s new in-scope layer, §9.3) since that's where the
-confirmed bug lives and where raw `free()` calls are rare enough to check
-narrowly: only 4 files in the real checkout call `.free(` at all
-(`_gdbm.py`, `_lzma.py`, `_overlapped.py`, `_pypy_util_cffi.py`).
+These are candidate signals, not confirmed defects. In particular, the
+scanner does not resolve the CFFI API for a particular version, establish
+runtime reachability, prove concurrent execution, or establish use-after-free.
 
-Two checks:
-
-1. **Suspicious `ffi.<name>` attribute access** -- flags any `ffi.X` where
-   `X` isn't in a conservative allowlist of real cffi API members. Coarse
-   (not a real resolution of cffi's actual API surface), but cheap and
-   exactly targeted at the confirmed `ffi.NONE` typo shape.
-2. **Unlocked `free()` after a `None`-is-not check, in a class that uses
-   `self.lock` elsewhere** -- flags a `free()` call not textually inside a
-   `with self.lock:`/`self.lock.acquire()` block, when the same class has a
-   `self.lock` attribute and uses it in at least one other method. A class
-   with no lock at all isn't flagged here (nothing to be inconsistent
-   with) -- that's a different, unconfirmed concern this scanner doesn't
-   claim to cover.
+Every finding requires manual source and call-path investigation.
 
 Usage:
     python scan_free_pairing.py [path] [--max-files N]
@@ -194,10 +167,9 @@ def _check_file(path: Path, project_root: Path) -> list[dict]:
                 "CONSIDER",
                 "medium",
                 node,
-                f"ffi.{attr} is not in the known-good cffi API allowlist -- this is the "
-                f"exact shape of danzin's confirmed bug #4a (ffi.NONE doesn't exist, "
-                f"should have been ffi.NULL, silently raising AttributeError right after "
-                f"a free() call and leaving a stale freed pointer)",
+                f"ffi.{attr} is an uppercase ffi attribute other than ffi.NULL; "
+                f"verify the attribute against the CFFI API version and inspect its "
+                f"execution path before classifying it as a defect",
                 "verify this is a real cffi API member for the version in use, not a typo",
             )
         )
@@ -218,11 +190,10 @@ def _check_file(path: Path, project_root: Path) -> list[dict]:
                         "CONSIDER",
                         "medium",
                         call,
-                        f"{cls.name}.{method.name}() calls free() without self.lock, while "
-                        f"the class uses self.lock elsewhere -- this is the exact shape of "
-                        f"danzin's confirmed bug #4b (LZMADecompressor.clear_input_buffer's "
-                        f"unlocked check-then-free of the same buffer decompress() correctly "
-                        f"locks)",
+                        f"{cls.name}.{method.name}() calls free() outside a syntactically "
+                        f"enclosing self.lock block, while the class uses self.lock elsewhere; "
+                        f"inspect concurrency, ownership, and all callers to determine whether "
+                        f"the operation requires synchronization",
                         f"class: {cls.name}",
                     )
                 )

@@ -6,3 +6,6 @@ __pycache__/
 
 # Generated PyPy review manifest
 plugins/pypy-review-toolkit/data/review_slices.json
+
+# Local Python virtual environment
+.venv/
