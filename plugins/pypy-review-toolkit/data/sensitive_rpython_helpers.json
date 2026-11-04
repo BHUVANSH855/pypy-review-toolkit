@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated, not exhaustive. Each entry is a real RPython helper with a precondition its signature doesn't enforce -- calling it with an out-of-precondition value produces PyPy's generic 'SystemError: unexpected internal exception (please report a bug)' leak instead of a proper app-level exception. Seeded from danzin's fusil findings (docs/PYPY_FINDINGS_REPORT.md); grow this list from future confirmed bugs, not speculation. See design doc \u00a79.1. A helper whose precondition has independent clauses declares them in `clauses`: each is discharged separately, by a call-site keyword (`discharged_by_kwarg`), by a proactive text hint, or by a reactive `except` handler -- and a reactive guard counts only when EVERY name in `exception_guard_hints` is handled, since a partial handler is exactly the shape of confirmed bug #3. A call leaving ANY clause undischarged stays CONSIDER -- a range check must not clear a surrogate obligation. Helpers with no `clauses` key keep the original single-clause behaviour.",
+  "_comment": "Curated, not exhaustive. Each entry is a real RPython helper with a precondition its signature doesn't enforce -- calling it with an out-of-precondition value produces PyPy's generic 'SystemError: unexpected internal exception (please report a bug)' leak instead of a proper app-level exception. Seeded from danzin's fusil findings (docs/PYPY_FINDINGS_REPORT.md); grow this list from future confirmed bugs, not speculation. See design doc §9.1. A helper whose precondition has independent clauses declares them in `clauses`: each is discharged separately, by a call-site keyword (`discharged_by_kwarg`), by a proactive text hint, or by a reactive `except` handler -- and a reactive guard counts only when EVERY name in `exception_guard_hints` is handled, since a partial handler is exactly the shape of confirmed bug #3. A call leaving ANY clause undischarged stays CONSIDER -- a range check must not clear a surrogate obligation. Helpers with no `clauses` key keep the original single-clause behaviour.",
   "helpers": [
     {
       "qualname": "rutf8.unichr_as_utf8",
@@ -9,7 +9,13 @@
       "guard_pattern_hints": [
         "0x10FFFF",
         "0x110000",
-        "1114111"
+        "1114111",
+        "0xD800",
+        "0xDfff",
+        "0xDFFF",
+        "0xdfff",
+        "55296",
+        "57343"
       ],
       "exception_guard_hints": [
         "OutOfRange"
@@ -70,6 +76,653 @@
         "InvalidSignednessError",
         "InvalidEndiannessError",
         "OverflowError"
+      ]
+    },
+    {
+      "qualname": "rutf8.codepoint_at_pos",
+      "source": "rpython/rlib/rutf8.py",
+      "precondition": "pos must be a valid byte offset into a well-formed UTF-8 string -- passing an offset that lands in the middle of a multi-byte sequence causes an internal RPython assertion instead of a proper app-level ValueError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "0 <= ",
+        "< len(",
+        "bytepos",
+        "byte_pos"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0 <= ",
+            "< len(",
+            "bytepos",
+            "byte_pos"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rutf8.utf8chr",
+      "source": "rpython/rlib/rutf8.py",
+      "precondition": "codepoint must be in [0, 0x10FFFF] and not a surrogate unless allow_surrogates is explicitly set -- same shape as unichr_as_utf8",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "0x10FFFF",
+        "0x110000",
+        "1114111",
+        "0xD800",
+        "0xDFFF",
+        "55296",
+        "57343"
+      ],
+      "exception_guard_hints": [
+        "OutOfRange"
+      ],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0x10FFFF",
+            "0x110000",
+            "1114111"
+          ]
+        },
+        {
+          "name": "surrogate",
+          "discharged_by_kwarg": "allow_surrogates",
+          "text_hints": [
+            "0xD800",
+            "0xDFFF",
+            "55296",
+            "57343"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rutf8.setitem_slice_of_s8",
+      "source": "rpython/rlib/rutf8.py",
+      "precondition": "the slice indices must be valid byte offsets aligned to character boundaries in the target UTF-8 buffer; unaligned offsets cause internal RPython exceptions",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "0 <= ",
+        "< len(",
+        "bytepos",
+        "utf8len"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0 <= ",
+            "< len(",
+            "bytepos",
+            "utf8len"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rbigint.frombytes",
+      "source": "rpython/rlib/rbigint.py",
+      "precondition": "byteorder must be 'big' or 'little' (not an arbitrary string); sign/unsigned mismatch when the high bit is set and signed=False causes internal OverflowError rather than ValueError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "big",
+        "little",
+        "byteorder",
+        "signed",
+        ">= 0",
+        "< 0"
+      ],
+      "exception_guard_hints": [
+        "InvalidEndiannessError",
+        "InvalidSignednessError"
+      ],
+      "clauses": [
+        {
+          "name": "encoding",
+          "text_hints": [
+            "big",
+            "little",
+            "byteorder"
+          ]
+        },
+        {
+          "name": "sign",
+          "text_hints": [
+            "signed",
+            ">= 0",
+            "< 0"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rbigint.fromrarith_int",
+      "source": "rpython/rlib/rbigint.py",
+      "precondition": "the value passed must fit in the target rarith type; overflow during narrowing conversion causes an internal RPython exception instead of an app-level OverflowError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "< 0",
+        ">= 0",
+        "MAXINT",
+        "MININT"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ]
+    },
+    {
+      "qualname": "rbigint.toint",
+      "source": "rpython/rlib/rbigint.py",
+      "precondition": "the bigint value must fit in a machine int (sys.maxsize); if it does not, RPython raises an internal OverflowError instead of the app-level OverflowError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "MAXINT",
+        "sys.maxsize",
+        "OverflowError",
+        "fits_int"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ]
+    },
+    {
+      "qualname": "rbigint.touint",
+      "source": "rpython/rlib/rbigint.py",
+      "precondition": "the bigint value must be non-negative and fit in an unsigned machine int; negative values cause an internal RPython exception",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "< 0",
+        ">= 0",
+        "sign",
+        "MAXUINT"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ]
+    },
+    {
+      "qualname": "runicode.str_decode_utf_8",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "the 'errors' argument must be one of the error handler strings PyPy's codec machinery supports; an unrecognised handler name causes an internal RPython lookup failure rather than a LookupError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "strict",
+        "ignore",
+        "replace",
+        "surrogateescape",
+        "surrogatepass",
+        "errors"
+      ],
+      "exception_guard_hints": [
+        "LookupError"
+      ]
+    },
+    {
+      "qualname": "runicode.str_decode_latin_1",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "input length must be non-negative and the error handler must be a recognised codec handler name",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "strict",
+        "ignore",
+        "replace",
+        "errors",
+        ">= 0"
+      ],
+      "exception_guard_hints": [
+        "LookupError"
+      ]
+    },
+    {
+      "qualname": "runicode.str_decode_ascii",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "every byte in the input must be <= 127 unless a non-strict error handler is passed; bytes 128–255 cause an internal codec exception when errors='strict' is assumed at the call site without validating the input is clean ASCII",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "< 128",
+        "<= 127",
+        "ascii",
+        "isascii",
+        "errors",
+        "strict",
+        "ignore",
+        "replace"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "< 128",
+            "<= 127",
+            "isascii"
+          ]
+        },
+        {
+          "name": "encoding",
+          "text_hints": [
+            "strict",
+            "ignore",
+            "replace",
+            "errors"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "runicode.unicode_encode_utf_8",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "codepoints must all be in [0, 0x10FFFF]; surrogates require allow_surrogates=True or a surrogatepass error handler; the BOM flag must be consistent with the target encoding variant",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "0x10FFFF",
+        "allow_surrogates",
+        "surrogatepass",
+        "surrogateescape",
+        "0x110000",
+        "1114111",
+        "0xD800",
+        "0xDFFF"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0x10FFFF",
+            "0x110000",
+            "1114111"
+          ]
+        },
+        {
+          "name": "surrogate",
+          "discharged_by_kwarg": "allow_surrogates",
+          "text_hints": [
+            "0xD800",
+            "0xDFFF",
+            "surrogatepass",
+            "surrogateescape"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rarithmetic.ovfcheck",
+      "source": "rpython/rlib/rarithmetic.py",
+      "precondition": "the argument must already be a Python-level int that could overflow -- passing the result of an expression that cannot overflow is harmless but passing an expression that overflows before ovfcheck sees it means ovfcheck never fires; call sites that perform arithmetic in r_uint before calling ovfcheck silently truncate rather than overflow",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "ovfcheck",
+        "OverflowError",
+        "MAXINT",
+        "MININT"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ]
+    },
+    {
+      "qualname": "rarithmetic.ovfcheck_float_to_int",
+      "source": "rpython/rlib/rarithmetic.py",
+      "precondition": "the float must be in the range [INT_MIN, INT_MAX]; NaN and Inf both cause an internal RPython exception instead of the app-level OverflowError/ValueError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "isnan",
+        "isinf",
+        "MAXINT",
+        "INT_MAX",
+        "INT_MIN",
+        "OverflowError",
+        "sys.maxsize",
+        "math.isnan",
+        "math.isinf"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "MAXINT",
+            "INT_MAX",
+            "INT_MIN",
+            "sys.maxsize"
+          ]
+        },
+        {
+          "name": "other",
+          "text_hints": [
+            "isnan",
+            "isinf",
+            "math.isnan",
+            "math.isinf"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rarithmetic.r_uint",
+      "source": "rpython/rlib/rarithmetic.py",
+      "precondition": "the integer passed must be non-negative when the caller intends unsigned semantics; negative Python ints silently wrap to large unsigned values in RPython rather than raising",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        ">= 0",
+        "< 0",
+        "unsigned",
+        "r_uint"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rarithmetic.intmask",
+      "source": "rpython/rlib/rarithmetic.py",
+      "precondition": "intmask silently truncates to the machine int range; callers that pass values expecting no truncation and then use the result in a range-sensitive context (array index, length) silently produce wrong values rather than raising",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "MAXINT",
+        "MININT",
+        "INT_MAX",
+        "intmask"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rstring.encode_unicode_utf8",
+      "source": "rpython/rlib/rstring.py",
+      "precondition": "the unicode value must be a valid RPython unicode string with codepoints in [0, 0x10FFFF]; surrogates cause an internal RPython codec exception unless the caller explicitly allows them",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "0x10FFFF",
+        "allow_surrogates",
+        "surrogatepass",
+        "0x110000",
+        "1114111",
+        "0xD800",
+        "0xDFFF"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "range",
+          "text_hints": [
+            "0x10FFFF",
+            "0x110000",
+            "1114111"
+          ]
+        },
+        {
+          "name": "surrogate",
+          "discharged_by_kwarg": "allow_surrogates",
+          "text_hints": [
+            "0xD800",
+            "0xDFFF",
+            "surrogatepass"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rstring.StringBuilder.build",
+      "source": "rpython/rlib/rstring.py",
+      "precondition": "build() must not be called after the builder has already been built or after a failed append; calling build() twice on the same builder is not safe in the translated build",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "_final",
+        "already built",
+        "builder"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rposix.open",
+      "source": "rpython/rlib/rposix.py",
+      "precondition": "the flags argument must be a valid combination of O_* constants for the host OS; invalid flag combinations map directly to the syscall and raise an internal RPython OSError instead of the app-level OSError with errno set",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "O_RDONLY",
+        "O_WRONLY",
+        "O_RDWR",
+        "os.O_",
+        "flags"
+      ],
+      "exception_guard_hints": [
+        "OSError"
+      ]
+    },
+    {
+      "qualname": "rposix.kill",
+      "source": "rpython/rlib/rposix.py",
+      "precondition": "the signal number must be a valid signal for the host platform; signal numbers outside [1, NSIG) cause an internal RPython exception instead of the app-level OSError/ValueError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "NSIG",
+        "signal.NSIG",
+        "> 0",
+        "signum",
+        "signalnum"
+      ],
+      "exception_guard_hints": [
+        "OSError"
+      ]
+    },
+    {
+      "qualname": "rposix.dup2",
+      "source": "rpython/rlib/rposix.py",
+      "precondition": "both file descriptor arguments must be non-negative valid file descriptors; negative or out-of-range values cause internal RPython exceptions instead of app-level OSError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        ">= 0",
+        "< 0",
+        "fd",
+        "fileno"
+      ],
+      "exception_guard_hints": [
+        "OSError"
+      ]
+    },
+    {
+      "qualname": "rfloat.string_to_float",
+      "source": "rpython/rlib/rfloat.py",
+      "precondition": "the input string must be a valid float literal; an invalid string causes an internal RPython ParseStringError rather than the app-level ValueError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "ParseStringError",
+        "ValueError",
+        "float(",
+        "try:"
+      ],
+      "exception_guard_hints": [
+        "ParseStringError"
+      ]
+    },
+    {
+      "qualname": "rfloat.formatd",
+      "source": "rpython/rlib/rfloat.py",
+      "precondition": "the format character must be one of 'e', 'E', 'f', 'F', 'g', 'G', 'r', 's', '%'; an unsupported format character causes an internal RPython ValueError instead of the app-level ValueError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "in 'eEfFgGrs%'",
+        "format_char",
+        "fmt_char",
+        "VALID_FLOAT_FORMAT"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rdtoa.dtoa",
+      "source": "rpython/rlib/rdtoa.py",
+      "precondition": "the float value must be finite (not NaN, not Inf); passing NaN or Inf causes an internal RPython exception in the dtoa C layer rather than a proper ValueError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "isnan",
+        "isinf",
+        "isfinite",
+        "math.isnan",
+        "math.isinf"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rstruct.standardfmttable.pack_char",
+      "source": "rpython/rlib/rstruct/standardfmttable.py",
+      "precondition": "the value must be a single-byte string or integer in [0, 255]; multi-byte or out-of-range values cause an internal RPython exception instead of the app-level struct.error CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "len(",
+        "== 1",
+        ">= 0",
+        "<= 255",
+        "struct.error"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rstruct.standardfmttable.unpack_char",
+      "source": "rpython/rlib/rstruct/standardfmttable.py",
+      "precondition": "the buffer must have at least one byte at the unpack offset; reading past the end of the buffer causes an internal RPython exception instead of a struct.error",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "len(",
+        "size",
+        "offset",
+        "struct.error"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rlocale.setlocale",
+      "source": "rpython/rlib/rlocale.py",
+      "precondition": "the category argument must be one of the platform-valid LC_* constants; an invalid category value causes an internal RPython exception rather than the app-level locale.Error CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "LC_",
+        "locale.LC_",
+        "category",
+        "locale.Error"
+      ],
+      "exception_guard_hints": [
+        "locale.Error"
+      ]
+    },
+    {
+      "qualname": "rutf8.check_utf8",
+      "source": "rpython/rlib/rutf8.py",
+      "precondition": "the byte string must be well-formed UTF-8; if allow_surrogates is not passed, surrogate codepoints in the input cause an internal CheckError instead of a UnicodeDecodeError with proper error position",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "allow_surrogates",
+        "0xD800",
+        "0xDFFF",
+        "CheckError"
+      ],
+      "exception_guard_hints": [
+        "CheckError"
+      ],
+      "clauses": [
+        {
+          "name": "surrogate",
+          "discharged_by_kwarg": "allow_surrogates",
+          "text_hints": [
+            "0xD800",
+            "0xDFFF",
+            "allow_surrogates"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "rutf8.utf8_in_chars",
+      "source": "rpython/rlib/rutf8.py",
+      "precondition": "the character argument must be a valid single-codepoint UTF-8 string; a multi-character or empty string causes an internal RPython assertion",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "len(",
+        "== 1",
+        "codepoints_in_utf8"
+      ],
+      "exception_guard_hints": []
+    },
+    {
+      "qualname": "rbigint.tolong",
+      "source": "rpython/rlib/rbigint.py",
+      "precondition": "only valid if the bigint fits in a C long; values outside [-2^63, 2^63-1] cause an internal RPython OverflowError rather than the app-level OverflowError CPython raises",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "MAXLONG",
+        "MINLONG",
+        "fits_long",
+        "OverflowError",
+        "sys.maxsize"
+      ],
+      "exception_guard_hints": [
+        "OverflowError"
+      ]
+    },
+    {
+      "qualname": "runicode.str_decode_utf_16",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "the BOM or explicit byteorder argument must be consistent with the actual byte order of the input; a BOM mismatch or invalid byteorder string causes an internal RPython exception instead of a UnicodeDecodeError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "BOM",
+        "byteorder",
+        "big",
+        "little",
+        "native"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "encoding",
+          "text_hints": [
+            "BOM",
+            "byteorder",
+            "big",
+            "little",
+            "native"
+          ]
+        }
+      ]
+    },
+    {
+      "qualname": "runicode.str_decode_utf_32",
+      "source": "rpython/rlib/runicode.py",
+      "precondition": "same BOM/byteorder constraint as str_decode_utf_16; additionally, every 4-byte code unit must decode to a codepoint <= 0x10FFFF, since out-of-range values cause an internal exception rather than UnicodeDecodeError",
+      "confirmed_bug": null,
+      "guard_pattern_hints": [
+        "BOM",
+        "byteorder",
+        "0x10FFFF",
+        "big",
+        "little",
+        "0x110000",
+        "1114111"
+      ],
+      "exception_guard_hints": [],
+      "clauses": [
+        {
+          "name": "encoding",
+          "text_hints": [
+            "BOM",
+            "byteorder",
+            "big",
+            "little"
+          ]
+        },
+        {
+          "name": "range",
+          "text_hints": [
+            "0x10FFFF",
+            "0x110000",
+            "1114111"
+          ]
+        }
       ]
     }
   ]
