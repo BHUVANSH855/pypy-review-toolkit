@@ -3,9 +3,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .DS_Store
-
-# Generated PyPy review manifest
-plugins/pypy-review-toolkit/data/review_slices.json
-
-# Local Python virtual environment
 .venv/
+
+docs/ENHANCEMENT_PLAN.md
+docs/pypy-review-toolkit-enhancement-plan.md

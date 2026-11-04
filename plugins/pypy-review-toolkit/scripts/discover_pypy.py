@@ -91,6 +91,12 @@ IN_SCOPE_LAYERS = frozenset({"rlib", "jit", "gc", "interpreter", "objspace", "mo
 # triaged well -- using the same target here.
 _SLICE_TARGET_LINES = 13_000
 
+# Layers and path prefixes with confirmed crash-reproducing bugs from the
+# findings catalogue (docs/PYPY_FINDINGS_REPORT.md). Used to assign
+# review_priority to slices so reviewers know where to start.
+_HIGH_PRIORITY_LAYERS = frozenset({"module", "rlib", "lib_pypy"})
+_CRITICAL_PRIORITY_PATHS = frozenset({"pypy/module/_io"})
+
 
 def _classify_layer(rel_path: str) -> str:
     """Classify *rel_path* (POSIX-style, relative to checkout root) into a layer.
@@ -129,8 +135,8 @@ def _is_shallow_clone(root: Path) -> bool:
     return (root / ".git" / "shallow").exists()
 
 
-def _git_branch_and_commit(root: Path) -> tuple[str | None, str | None]:
-    """Best-effort current branch name and short commit hash via `git`.
+def _git_branch_and_commit(root: Path) -> tuple[str | None, str | None, str | None]:
+    """Best-effort current branch name, short commit hash, and commit date via `git`.
 
     Added per design doc §0.2/§9.4: trying to verify two of danzin's
     confirmed bugs against this toolkit's own checkout surfaced a real
@@ -140,6 +146,13 @@ def _git_branch_and_commit(root: Path) -> tuple[str | None, str | None]:
     report this toolkit produces should say what it was actually run
     against, so a mismatch like that is visible immediately rather than
     discovered by hand days later.
+
+    The commit date (ISO 8601 from ``git log -1 --format=%ci``) lets a reviewer
+    immediately determine whether their checkout predates or postdates a known
+    fix without having to look up the commit hash manually.
+
+    Returns ``(branch, short_hash, commit_date)``; any element may be ``None``
+    if the git command fails or the directory is not a git repository.
     """
     try:
         branch = subprocess.run(
@@ -156,11 +169,19 @@ def _git_branch_and_commit(root: Path) -> tuple[str | None, str | None]:
             text=True,
             timeout=5,
         )
+        date = subprocess.run(
+            ["git", "log", "-1", "--format=%ci"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
         branch_name = branch.stdout.strip() if branch.returncode == 0 else None
         commit_hash = commit.stdout.strip() if commit.returncode == 0 else None
-        return branch_name or None, commit_hash or None
+        commit_date = date.stdout.strip() if date.returncode == 0 else None
+        return branch_name or None, commit_hash or None, commit_date or None
     except (OSError, subprocess.SubprocessError):
-        return None, None
+        return None, None, None
 
 
 def _pypy_version_string(root: Path) -> str | None:
@@ -235,7 +256,7 @@ def discover(target: str) -> dict:
             n_lines = 0
         lines_by_layer[layer] = lines_by_layer.get(layer, 0) + n_lines
 
-    branch_name, commit_hash = _git_branch_and_commit(checkout_root)
+    branch_name, commit_hash, commit_date = _git_branch_and_commit(checkout_root)
 
     return {
         "project_root": str(project_root),
@@ -245,6 +266,7 @@ def discover(target: str) -> dict:
         "is_shallow_clone": _is_shallow_clone(checkout_root),
         "git_branch": branch_name,
         "git_commit": commit_hash,
+        "git_commit_date": commit_date,
         "pypy_cpython_version_hint": _pypy_version_string(checkout_root),
         "tree_sitter_available": _TS_AVAILABLE,
         "in_scope_layers": sorted(IN_SCOPE_LAYERS),
@@ -252,6 +274,25 @@ def discover(target: str) -> dict:
         "file_counts_by_layer": {k: len(v) for k, v in files_by_layer.items()},
         "lines_by_layer": lines_by_layer,
     }
+
+
+def _slice_priority(layer: str, files: list[str]) -> str:
+    """Assign a review priority tier to a slice based on confirmed-bug coverage.
+
+    ``"critical"`` -- the slice contains files from ``pypy/module/_io/``, the
+    source of 4 confirmed crash-reproducing bugs in the findings catalogue.
+    ``"high"``     -- the slice is in a layer with at least one confirmed bug
+    (``module``, ``rlib``, ``lib_pypy``).
+    ``"normal"``   -- everything else.
+
+    Priority is a starting-point hint, not a guarantee that a slice contains
+    bugs or that ``"normal"`` slices are safe.
+    """
+    if any(f.startswith("pypy/module/_io") for f in files):
+        return "critical"
+    if layer in _HIGH_PRIORITY_LAYERS:
+        return "high"
+    return "normal"
 
 
 def build_review_slices(discovery: dict) -> dict:
@@ -290,6 +331,7 @@ def build_review_slices(discovery: dict) -> dict:
                         "layer": layer,
                         "files": current_slice,
                         "approx_lines": current_lines,
+                        "review_priority": _slice_priority(layer, current_slice),
                     }
                 )
                 current_slice = []
@@ -302,6 +344,7 @@ def build_review_slices(discovery: dict) -> dict:
                     "layer": layer,
                     "files": current_slice,
                     "approx_lines": current_lines,
+                    "review_priority": _slice_priority(layer, current_slice),
                 }
             )
 
@@ -333,6 +376,7 @@ def build_pypy_envelope(
         "is_shallow_clone": discovery.get("is_shallow_clone", False),
         "git_branch": discovery.get("git_branch"),
         "git_commit": discovery.get("git_commit"),
+        "git_commit_date": discovery.get("git_commit_date"),
         "pypy_cpython_version_hint": discovery.get("pypy_cpython_version_hint"),
         "tree_sitter_available": discovery.get("tree_sitter_available", False),
         "in_scope_layers": discovery.get("in_scope_layers", []),
