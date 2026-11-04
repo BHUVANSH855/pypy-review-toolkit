@@ -6,8 +6,9 @@ correctness bugs and translation hazards specific to how PyPy is built.
 
 Sibling of [cpython-review-toolkit](https://github.com/ReviewToolkits/cpython-review-toolkit)
 and [rustpy-review-toolkit](https://github.com/ReviewToolkits/rustpy-review-toolkit).
-Reviews PyPy's own source, not code that runs on PyPy, and not the
-CPython-compatible stdlib PyPy ships in `lib-python`/`lib_pypy/`.
+Reviews PyPy's own implementation, including selected `lib_pypy/` CFFI
+and native-resource lifecycle patterns. Scanner coverage is layer-specific;
+the toolkit does not claim to review every file in the compatibility stdlib.
 
 ## Findings
 
@@ -44,15 +45,17 @@ Highlights:
 | `scan_rpython_restrictions.py` | Unbounded `**kwargs`; `eval`/`exec` deliberately excluded | 145 findings |
 | `scan_unvalidated_helper_calls.py` | User value into RPython helper without precondition check | Catches PYPY-FUZZ-002, REV-004, REV-005; clause-splitting checks range and surrogates independently |
 | `scan_sibling_guard_consistency.py` | App-exposed method missing the guard convention its class establishes | Real findings on `W_BytesIO`, `W_StringIO`, `W_MemoryView` |
-| `scan_cross_class_method_guard.py` | Same method name on sibling classes; some guard their field, one doesn't | Catches PYPY-REV-001 (`_dealloc_warn_w` segfault) |
-| `scan_free_pairing.py` | Raw `free()` pairing and suspicious `ffi.*` attribute access in `lib_pypy/` | Catches `ffi.NONE` typo (PYPY-FUZZ-004) and unlocked free calls |
+| `scan_cross_class_method_guard.py` | Same method name on sibling classes; some guard their field, one doesn't | Flags the pattern associated with PYPY-REV-001 (`_dealloc_warn_w` segfault); source-level verification is still required |
+| `scan_free_pairing.py` | Raw `free()` pairing and suspicious uppercase `ffi.*` attribute access in `lib_pypy/` | Flags candidates for source, API-semantics, and reachability review; patterns alone do not establish defects |
 | `scan_guard_callback_deref.py` | Guard → app-level callback → guarded-field dereference (TOCTOU) | **4/4 recall, 0 false positives** on 4 confirmed SIGSEGVs |
 
 **Agents** (`plugins/pypy-review-toolkit/agents/`):
 
 `translated-divergence-auditor`, `immutability-contract-auditor`,
 `interp-app-boundary-checker`, `rpython-restriction-scanner`,
-`unvalidated-helper-call-auditor`, `jit-trace-reviewer`, `git-history-analyzer`.
+`unvalidated-helper-call-auditor`, `jit-trace-reviewer`,
+`git-history-analyzer`, `lib-pypy-cffi-auditor`,
+`sibling-guard-auditor`, `cross-class-guard-auditor`.
 
 **Commands** (`plugins/pypy-review-toolkit/commands/`):
 
