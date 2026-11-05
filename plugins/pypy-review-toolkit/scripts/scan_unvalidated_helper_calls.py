@@ -35,6 +35,7 @@ way this scanner becomes more valuable over time.
 
 Usage:
     python scan_unvalidated_helper_calls.py [path] [--max-files N]
+    python scan_unvalidated_helper_calls.py [path] --reachability-map data/rpython_reachability_sources.json
 """
 
 from __future__ import annotations
@@ -57,7 +58,31 @@ from scan_common import (  # noqa: E402
 from pypy_utils import parse_rpython_file  # noqa: E402
 from discover_pypy import build_pypy_envelope, discover  # noqa: E402
 
+# covers: module, interpreter, objspace
 _DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "sensitive_rpython_helpers.json"
+
+
+def _load_reachability_map(path: str | Path) -> dict[str, dict]:
+    """Load rpython_reachability_sources.json and return a dict keyed by qualname."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return {entry["qualname"]: entry for entry in data.get("sources", []) if entry.get("confirmed")}
+
+
+def _reachability_for_finding(finding: dict, reachability_map: dict[str, dict]) -> str:
+    """Return 'HIGH' if the finding's file matches a source in the reachability map, else 'UNKNOWN'.
+
+    Matching is done on the ``source`` field of the reachability entry (a relative path such as
+    ``pypy/objspace/std/unicodeobject.py``).  Any finding whose ``file`` contains or is contained
+    by a confirmed reachability source path is marked HIGH — the entire file is a high-reachability
+    surface when at least one of its functions is known to be interp2app-exposed.
+    """
+    finding_file = finding.get("file", "")
+    for entry in reachability_map.values():
+        source = entry.get("source", "")
+        if source and finding_file and (source in finding_file or finding_file in source):
+            return "HIGH"
+    return "UNKNOWN"
 
 
 def _load_helpers() -> list[dict]:
@@ -310,7 +335,7 @@ def _check_file(path: Path, project_root: Path, helpers: list[dict]) -> list[dic
     return findings
 
 
-def analyze(target: str, *, max_files: int = 0) -> dict:
+def analyze(target: str, *, max_files: int = 0, reachability_map_path: str | None = None) -> dict:
     resolved = Path(target).resolve()
     project_root = find_project_root(resolved)
     scan_root = resolved
@@ -347,14 +372,32 @@ def analyze(target: str, *, max_files: int = 0) -> dict:
         findings.extend(_check_file(path, project_root, helpers))
 
     findings = deduplicate_findings(findings)
+
+    # Annotate findings with reachability when a map is provided
+    if reachability_map_path:
+        reachability_map = _load_reachability_map(reachability_map_path)
+        for f in findings:
+            f["reachability"] = _reachability_for_finding(f, reachability_map)
+
     envelope = build_pypy_envelope(discovery, findings, functions_analyzed=len(non_test_files))
     envelope["pypy_info"]["sensitive_helpers_tracked"] = [h["qualname"] for h in helpers]
+    if reachability_map_path:
+        envelope["pypy_info"]["reachability_map_applied"] = str(reachability_map_path)
     return envelope
+
+
+def _parse_reachability_map_arg(argv: list[str]) -> str | None:
+    """Extract --reachability-map value from argv; return None if absent."""
+    for i, arg in enumerate(argv):
+        if arg == "--reachability-map" and i + 1 < len(argv):
+            return argv[i + 1]
+    return None
 
 
 def main() -> None:
     target, max_files = parse_common_args(sys.argv[1:])
-    result = analyze(target, max_files=max_files)
+    reachability_map_path = _parse_reachability_map_arg(sys.argv[1:])
+    result = analyze(target, max_files=max_files, reachability_map_path=reachability_map_path)
     emit(result)
 
 

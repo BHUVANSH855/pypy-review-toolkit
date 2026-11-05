@@ -18,6 +18,8 @@ Usage:
     python scan_free_pairing.py [path] [--max-files N]
 """
 
+# covers: lib_pypy
+
 from __future__ import annotations
 
 import ast

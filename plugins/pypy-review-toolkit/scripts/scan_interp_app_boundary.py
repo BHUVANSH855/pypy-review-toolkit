@@ -39,6 +39,8 @@ Usage:
     python scan_interp_app_boundary.py [path] [--max-files N]
 """
 
+# covers: interpreter, module, objspace
+
 from __future__ import annotations
 
 import ast

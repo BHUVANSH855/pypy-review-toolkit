@@ -1,8 +1,40 @@
 {
   "name": "pypy-review-toolkit",
-  "version": "0.1.0",
-  "description": "11 agents and 4 commands for reviewing PyPy's RPython interpreter core, object space, JIT, and lib_pypy: translated()/untranslated() divergence, JIT immutability-contract auditing, interp/app boundary leak detection, RPython-restriction scanning (kwargs only, v0.1), scanner-backed JIT structural review (arg mismatches, unbounded unroll_safe, dead JitDrivers), git-history analysis, CFFI/native-resource lifecycle triage, within-class and cross-class guard-consistency triage, and GC-hint discipline (@rgc.no_collect violations and raw-memory trace-hook gaps).",
+  "version": "0.1.1",
+  "description": "11 agents and 6 commands for reviewing PyPy's RPython interpreter core, object space, JIT, and lib_pypy: translated()/untranslated() divergence, JIT immutability-contract auditing, interp/app boundary leak detection, RPython-restriction scanning, scanner-backed JIT structural review, git-history analysis, CFFI/native-resource lifecycle triage, within-class and cross-class guard-consistency triage, GC-hint discipline, coverage mapping (/map), and reachability-weighted exploration (/informed-explore).",
   "author": {
     "name": "Bhuvansh"
-  }
+  },
+  "commands": [
+    {
+      "name": "explore",
+      "description": "Full phased review: discovery → all scanners → agent triage → synthesis",
+      "file": "commands/explore.md"
+    },
+    {
+      "name": "health",
+      "description": "Quick scored 1–10 dashboard across every review dimension",
+      "file": "commands/health.md"
+    },
+    {
+      "name": "hotspots",
+      "description": "Rank the riskiest locations by divergence, immutability, and guard gaps",
+      "file": "commands/hotspots.md"
+    },
+    {
+      "name": "known-issues",
+      "description": "Cross-reference the known-bugs catalogue against a fresh scanner run",
+      "file": "commands/known-issues.md"
+    },
+    {
+      "name": "map",
+      "description": "Build a coverage map of all scanners, their layers, and known reachability entry points",
+      "file": "commands/map.md"
+    },
+    {
+      "name": "informed-explore",
+      "description": "Reachability-weighted exploration — same as /explore but prioritises HIGH-reachability findings",
+      "file": "commands/informed-explore.md"
+    }
+  ]
 }

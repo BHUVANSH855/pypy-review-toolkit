@@ -32,6 +32,8 @@ Usage:
     python scan_gc_hints.py [path] [--max-files N]
 """
 
+# covers: interpreter, rlib, gc
+
 from __future__ import annotations
 
 import ast

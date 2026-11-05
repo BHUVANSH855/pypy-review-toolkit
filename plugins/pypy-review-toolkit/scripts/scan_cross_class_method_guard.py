@@ -42,6 +42,8 @@ Usage:
     python scan_cross_class_method_guard.py [path] [--max-files N]
 """
 
+# covers: interpreter, objspace, module
+
 from __future__ import annotations
 
 import ast

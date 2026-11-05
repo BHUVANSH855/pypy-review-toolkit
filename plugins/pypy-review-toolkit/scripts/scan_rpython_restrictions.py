@@ -32,6 +32,8 @@ Usage:
     python scan_rpython_restrictions.py [path] [--max-files N]
 """
 
+# covers: interpreter, objspace, module, jit, rlib, gc
+
 from __future__ import annotations
 
 import ast

@@ -8,13 +8,15 @@ unguarded call in a different nested function. Confirmed on real code:
 pypy/objspace/std/newformat.py's nested _lit() function.
 """
 
+import json
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins" / "pypy-review-toolkit" / "scripts"))
 
-from scan_unvalidated_helper_calls import _check_file  # noqa: E402
+from scan_unvalidated_helper_calls import _check_file, analyze as _analyze  # noqa: E402
 
 _HELPERS = [
     {
@@ -281,3 +283,88 @@ def test_helpers_without_clauses_keep_single_clause_behaviour(tmp_path):
     """
     findings = _check_file(_write(tmp_path, src), tmp_path, _HELPERS)
     assert findings[0]["classification"] == "ACCEPTABLE"
+
+
+# ---------------------------------------------------------------------------
+# --reachability-map annotation tests (Issue #20)
+# ---------------------------------------------------------------------------
+
+_SCRIPTS = Path(__file__).resolve().parent.parent / "plugins" / "pypy-review-toolkit" / "scripts"
+_DATA = Path(__file__).resolve().parent.parent / "plugins" / "pypy-review-toolkit" / "data"
+
+_MINIMAL_REACHABILITY = {
+    "_comment": "test fixture",
+    "sources": [
+        {
+            "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_format",
+            "source": "pypy/objspace/std/unicodeobject.py",
+            "entry_via": "interp2app",
+            "confirmed": True,
+        }
+    ],
+}
+
+
+def test_reachability_high_when_function_matches():
+    """A finding in a file/function matching the reachability map gets reachability='HIGH'."""
+    src = textwrap.dedent("""
+        def descr_format(self, space, w_format_spec):
+            value = space.int_w(w_format_spec)
+            result = rutf8.unichr_as_utf8(value)
+    """)
+    with tempfile.TemporaryDirectory() as tmp:
+        # Write fixture in a path that matches the reachability source
+        target_dir = Path(tmp) / "pypy" / "objspace" / "std"
+        target_dir.mkdir(parents=True)
+        (target_dir / "unicodeobject.py").write_text(src, encoding="utf-8")
+
+        # Write reachability map
+        rmap_path = Path(tmp) / "reachability.json"
+        rmap_path.write_text(json.dumps(_MINIMAL_REACHABILITY), encoding="utf-8")
+
+        result = _analyze(tmp, reachability_map_path=str(rmap_path))
+
+    high_findings = [
+        f for f in result.get("findings", [])
+        if f.get("reachability") == "HIGH"
+    ]
+    assert high_findings, (
+        f"Expected at least one HIGH-reachability finding; findings: {result.get('findings', [])}"
+    )
+
+
+def test_reachability_unknown_when_function_not_in_map():
+    """A finding in a function not in the reachability map gets reachability='UNKNOWN'."""
+    src = textwrap.dedent("""
+        def some_internal_helper(space, value):
+            result = rutf8.unichr_as_utf8(value)
+    """)
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "helper.py").write_text(src, encoding="utf-8")
+
+        rmap_path = Path(tmp) / "reachability.json"
+        rmap_path.write_text(json.dumps(_MINIMAL_REACHABILITY), encoding="utf-8")
+
+        result = _analyze(tmp, reachability_map_path=str(rmap_path))
+
+    # Every finding should be UNKNOWN since helper.py is not in the map
+    for f in result.get("findings", []):
+        assert f.get("reachability") == "UNKNOWN", (
+            f"Expected reachability=UNKNOWN for unrecognised function; got {f.get('reachability')!r}"
+        )
+
+
+def test_no_reachability_key_when_flag_absent():
+    """When --reachability-map is not passed, findings have no 'reachability' key."""
+    src = textwrap.dedent("""
+        def f(space, value):
+            result = rutf8.unichr_as_utf8(value)
+    """)
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "sample.py").write_text(src, encoding="utf-8")
+        result = _analyze(tmp)
+
+    for f in result.get("findings", []):
+        assert "reachability" not in f, (
+            f"Expected no reachability key when flag absent; got {f}"
+        )
