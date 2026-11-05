@@ -31,6 +31,8 @@ Usage:
     python scan_translated_divergence.py [path] [--max-files N]
 """
 
+# covers: interpreter, objspace, module, jit, rlib, gc
+
 from __future__ import annotations
 
 import ast

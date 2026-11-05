@@ -1,0 +1,125 @@
+{
+  "_comment": "Known RPython entry points reachable from user Python at runtime. Incomplete — UNKNOWN reachability does not mean unreachable. Seeded from interp2app exposures in pypy/objspace/std/ confirmed by reading the source (py3.11 branch, fe2af5843a).",
+  "sources": [
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_format",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_encode",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_upper",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_lower",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_join",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.unicodeobject.W_UnicodeObject.descr_split",
+      "source": "pypy/objspace/std/unicodeobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.bytesobject.W_BytesObject.descr_decode",
+      "source": "pypy/objspace/std/bytesobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.bytesobject.W_BytesObject.descr_split",
+      "source": "pypy/objspace/std/bytesobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.bytesobject.W_BytesObject.descr_join",
+      "source": "pypy/objspace/std/bytesobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.listobject.W_ListObject.descr_append",
+      "source": "pypy/objspace/std/listobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.listobject.W_ListObject.descr_insert",
+      "source": "pypy/objspace/std/listobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.listobject.W_ListObject.descr_pop",
+      "source": "pypy/objspace/std/listobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.listobject.W_ListObject.descr_sort",
+      "source": "pypy/objspace/std/listobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.dictmultiobject.W_DictMultiObject.descr_get",
+      "source": "pypy/objspace/std/dictmultiobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.dictmultiobject.W_DictMultiObject.descr_setitem",
+      "source": "pypy/objspace/std/dictmultiobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.dictmultiobject.W_DictMultiObject.descr_update",
+      "source": "pypy/objspace/std/dictmultiobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.intobject.W_IntObject.descr_bit_length",
+      "source": "pypy/objspace/std/intobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.floatobject.W_FloatObject.descr_as_integer_ratio",
+      "source": "pypy/objspace/std/floatobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.setobject.W_BaseSetObject.descr_add",
+      "source": "pypy/objspace/std/setobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    },
+    {
+      "qualname": "pypy.objspace.std.setobject.W_BaseSetObject.descr_discard",
+      "source": "pypy/objspace/std/setobject.py",
+      "entry_via": "interp2app",
+      "confirmed": true
+    }
+  ]
+}

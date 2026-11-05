@@ -37,6 +37,8 @@ Usage:
     python scan_immutability_contracts.py [path] [--max-files N]
 """
 
+# covers: interpreter, objspace, jit, rlib
+
 from __future__ import annotations
 
 import ast

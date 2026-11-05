@@ -29,6 +29,8 @@ Usage:
     python scan_jit_driver.py [path] [--max-files N]
 """
 
+# covers: jit, interpreter
+
 from __future__ import annotations
 
 import ast

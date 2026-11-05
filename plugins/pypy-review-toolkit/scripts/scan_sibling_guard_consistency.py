@@ -40,6 +40,8 @@ Usage:
     python scan_sibling_guard_consistency.py [path] [--max-files N]
 """
 
+# covers: interpreter, objspace, module
+
 from __future__ import annotations
 
 import ast
