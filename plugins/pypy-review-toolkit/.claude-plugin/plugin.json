@@ -1,7 +1,7 @@
 {
   "name": "pypy-review-toolkit",
   "version": "0.1.0",
-  "description": "10 agents and 4 commands for reviewing PyPy's RPython interpreter core, object space, JIT, and lib_pypy: translated()/untranslated() divergence, JIT immutability-contract auditing, interp/app boundary leak detection, RPython-restriction scanning (kwargs only, v0.1), qualitative JIT-trace review, git-history analysis, CFFI/native-resource lifecycle triage, and within-class and cross-class guard-consistency triage.",
+  "description": "11 agents and 4 commands for reviewing PyPy's RPython interpreter core, object space, JIT, and lib_pypy: translated()/untranslated() divergence, JIT immutability-contract auditing, interp/app boundary leak detection, RPython-restriction scanning (kwargs only, v0.1), qualitative JIT-trace review, git-history analysis, CFFI/native-resource lifecycle triage, within-class and cross-class guard-consistency triage, and GC-hint discipline (@rgc.no_collect violations and raw-memory trace-hook gaps).",
   "author": {
     "name": "Bhuvansh"
   }
