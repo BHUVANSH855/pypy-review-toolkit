@@ -33,7 +33,7 @@ Highlights:
   precondition shape: surrogate codepoints leak
   `SystemError: unexpected internal exception (please report a bug)`
 
-## Status: v0.1
+## Status: v0.1.0
 
 **Scanners** (`plugins/pypy-review-toolkit/scripts/`):
 
@@ -47,7 +47,8 @@ Highlights:
 | `scan_sibling_guard_consistency.py` | App-exposed method missing the guard convention its class establishes | Real findings on `W_BytesIO`, `W_StringIO`, `W_MemoryView` |
 | `scan_cross_class_method_guard.py` | Same method name on sibling classes; some guard their field, one doesn't | Flags the pattern associated with PYPY-REV-001 (`_dealloc_warn_w` segfault); source-level verification is still required |
 | `scan_free_pairing.py` | Raw `free()` pairing and suspicious uppercase `ffi.*` attribute access in `lib_pypy/` | Flags candidates for source, API-semantics, and reachability review; patterns alone do not establish defects |
-| `scan_guard_callback_deref.py` | Guard → app-level callback → guarded-field dereference (TOCTOU) | **4/4 recall, 0 false positives** on 4 confirmed SIGSEGVs |
+| `scan_gc_hints.py` | `@rgc.must_be_light_finalizer` / `@rgc.no_collect` discipline | Flags GC hint mismatches and unchecked `rffi.raw_malloc` allocations |
+| `scan_jit_driver.py` | `JitDriver` greenkey / `get_printable_location` contract | Flags dead drivers, missing `get_printable_location`, and `can_inline` mismatches |
 
 **Agents** (`plugins/pypy-review-toolkit/agents/`):
 
@@ -55,13 +56,14 @@ Highlights:
 `interp-app-boundary-checker`, `rpython-restriction-scanner`,
 `unvalidated-helper-call-auditor`, `jit-trace-reviewer`,
 `git-history-analyzer`, `lib-pypy-cffi-auditor`,
-`sibling-guard-auditor`, `cross-class-guard-auditor`.
+`sibling-guard-auditor`, `cross-class-guard-auditor`,
+`gc-hint-auditor`.
 
 **Commands** (`plugins/pypy-review-toolkit/commands/`):
 
-`explore`, `health`, `hotspots`, `known-issues`.
+`explore`, `health`, `hotspots`, `known-issues`, `map`, `informed-explore`.
 
-**112 tests passing.**
+**211 tests passing.**
 
 ## Requirements
 
