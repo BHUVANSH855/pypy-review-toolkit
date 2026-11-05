@@ -225,6 +225,10 @@ def _check_file(path: Path, project_root: Path) -> list[dict]:
     for f in findings:
         f["file"] = rel
         f["function"] = f["message"].split("()", 1)[0].rsplit(" ", 1)[-1] if "()" in f["message"] else ""
+
+    # W_* class resource-release pass (new in v0.1.1)
+    findings.extend(_scan_w_class_resource_release(tree, rel))
+
     return findings
 
 
@@ -233,6 +237,102 @@ def _function_name_from_message(message: str) -> str:
     if "()" in message:
         return message.split("()", 1)[0].split()[-1]
     return ""
+
+
+# ---------------------------------------------------------------------------
+# W_* class resource-release pass
+# ---------------------------------------------------------------------------
+
+_RESOURCE_ACQUIRE_HINTS = frozenset({
+    "open", "socket", "lock", "acquire", "malloc", "ffi.new",
+})
+
+_RELEASE_METHOD_NAMES = frozenset({
+    "__del__", "descr_close", "close", "descr___del__",
+})
+
+
+def _rhs_call_name(node: ast.expr) -> str | None:
+    """Return a simple name for the RHS call, or None if it's not a call."""
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        # e.g. ffi.new, os.open
+        if isinstance(func.value, ast.Name):
+            return f"{func.value.id}.{func.attr}"
+        return func.attr
+    return None
+
+
+def _is_resource_acquisition(call_name: str) -> bool:
+    """True if call_name contains any of the resource-acquisition hint words."""
+    lower = call_name.lower()
+    return any(hint in lower for hint in _RESOURCE_ACQUIRE_HINTS)
+
+
+def _scan_w_class_resource_release(tree: ast.Module, rel: str) -> list[dict]:
+    """Walk W_* classes; flag those that acquire resources with no release method."""
+    findings: list[dict] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not node.name.startswith("W_"):
+            continue
+
+        # Collect method names present in the class body.
+        method_names: set[str] = {
+            item.name
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        has_release = bool(method_names & _RELEASE_METHOD_NAMES)
+        if has_release:
+            continue
+
+        # Look for self.X = <resource-acquisition-call> in method bodies.
+        for item in node.body:
+            if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for stmt in ast.walk(item):
+                if not isinstance(stmt, ast.Assign):
+                    continue
+                # Check self.attr = <call>
+                for target in stmt.targets:
+                    if not (
+                        isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"
+                    ):
+                        continue
+                    call_name = _rhs_call_name(stmt.value)
+                    if call_name and _is_resource_acquisition(call_name):
+                        findings.append({
+                            "type": "w-class-no-release",
+                            "subtype": "W_CLASS_NO_RELEASE",
+                            "classification": "REVIEW",
+                            "confidence": "medium",
+                            "line": node.lineno,
+                            "file": rel,
+                            "class_name": node.name,
+                            "acquiring_method": item.name,
+                            "resource_hint": call_name,
+                            "message": (
+                                f"{node.name}.{item.name}() assigns self.{target.attr} "
+                                f"from '{call_name}' but the class has no "
+                                f"__del__/descr_close/close/descr___del__ method"
+                            ),
+                            "detail": (
+                                f"Reviewer must confirm resource is long-lived and not "
+                                f"released through a wrapper or parent class"
+                            ),
+                        })
+                        break  # one finding per method is enough
+
+    return findings
 
 
 _CALL_PATTERN_CACHE: dict[str, re.Pattern] = {}

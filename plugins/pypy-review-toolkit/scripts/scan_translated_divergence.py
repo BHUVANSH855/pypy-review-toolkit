@@ -332,15 +332,27 @@ def _finding(
     }
 
 
+_SKIP_SENTINEL = "__DEGRADED_PARSE_SKIP__"
+
+
 def _check_file(path: Path, project_root: Path) -> list[dict]:
     result = parse_rpython_file(path)
     if result.parser != "ast" or result.ast_tree is None:
-        # v0.1: this check runs on the ast-parseable ~83% of the tree.
-        # Extending it to the tree-sitter-fallback 17% needs a tree-sitter-
-        # native walk (design doc §3.1 notes decorator inspection has the
-        # same gap) -- not yet implemented, tracked as a known undercount
-        # rather than silently skipped.
-        return []
+        # Emit a DEGRADED_PARSE_SKIP informational finding so callers can
+        # account for every file that was dropped rather than receiving a
+        # silently incomplete result.  The sentinel type is filtered out of
+        # the main findings list by analyze() after skipped_files is built.
+        rel = relative_to_root(path, project_root)
+        return [{
+            "type": _SKIP_SENTINEL,
+            "subtype": "DEGRADED_PARSE_SKIP",
+            "classification": "INFO",
+            "confidence": "n/a",
+            "line": 0,
+            "file": str(rel),
+            "message": f"File skipped: ast.parse() failed and tree-sitter is unavailable",
+            "detail": str(path),
+        }]
 
     tree = result.ast_tree
     rel = relative_to_root(path, project_root)
@@ -475,12 +487,36 @@ def analyze(target: str, *, max_files: int = 0) -> dict:
         # whatever was pointed at, same as any other scanner would.
         files, files_total = collect_python_files(scan_root, max_files)
 
-    findings: list[dict] = []
+    raw: list[dict] = []
     for path in files:
-        findings.extend(_check_file(path, project_root))
+        raw.extend(_check_file(path, project_root))
 
+    # Separate skip sentinels from real findings so callers see both.
+    skipped_files: list[str] = []
+    findings: list[dict] = []
+    for f in raw:
+        if f.get("type") == _SKIP_SENTINEL:
+            skipped_files.append(f["file"])
+            # Re-emit as a real DEGRADED_PARSE_SKIP INFO finding (not a sentinel).
+            findings.append({
+                "type": "degraded-parse-skip",
+                "subtype": "DEGRADED_PARSE_SKIP",
+                "classification": "INFO",
+                "confidence": "n/a",
+                "line": 0,
+                "file": f["file"],
+                "message": f["message"],
+                "detail": f["detail"],
+            })
+        else:
+            findings.append(f)
+
+    files_analyzed = len(files) - len(skipped_files)
     findings = deduplicate_findings(findings)
-    return build_pypy_envelope(discovery, findings, functions_analyzed=len(files))
+    envelope = build_pypy_envelope(discovery, findings, functions_analyzed=files_analyzed)
+    envelope["skipped_files"] = skipped_files
+    envelope["summary"]["files_skipped"] = len(skipped_files)
+    return envelope
 
 
 def main() -> None:

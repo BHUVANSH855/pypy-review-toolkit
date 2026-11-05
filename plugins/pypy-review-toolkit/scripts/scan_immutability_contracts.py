@@ -427,6 +427,68 @@ def _is_initialization_method(method_name: str) -> bool:
     return method_name in {"__init__", "descr__init__"}
 
 
+# ---------------------------------------------------------------------------
+# Helpers for the @jit.unroll_safe unbounded-loop pass (Pass 2 of _check_file)
+# Same logic as scan_jit_driver.py; duplicated here so this scanner is
+# self-contained and findings surface regardless of scan order.
+# ---------------------------------------------------------------------------
+
+def _is_unroll_safe_decorator(dec: ast.expr) -> bool:
+    if isinstance(dec, ast.Attribute):
+        return dec.attr == "unroll_safe" and isinstance(dec.value, ast.Name) and dec.value.id == "jit"
+    if isinstance(dec, ast.Name):
+        return dec.id == "unroll_safe"
+    if isinstance(dec, ast.Call):
+        return _is_unroll_safe_decorator(dec.func)
+    return False
+
+
+def _unroll_promoted_names(func: ast.FunctionDef) -> set[str]:
+    promoted: set[str] = set()
+    for node in ast.walk(func):
+        if not isinstance(node, ast.Assign):
+            continue
+        val = node.value
+        if isinstance(val, ast.Call):
+            fn = val.func
+            is_promote = (
+                (isinstance(fn, ast.Attribute) and fn.attr == "promote")
+                or (isinstance(fn, ast.Name) and fn.id == "promote")
+            )
+            if is_promote:
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        promoted.add(t.id)
+    return promoted
+
+
+def _unroll_param_names(func: ast.FunctionDef) -> set[str]:
+    args = func.args
+    names: set[str] = set()
+    for a in args.args + args.posonlyargs + args.kwonlyargs:
+        names.add(a.arg)
+    if args.vararg:
+        names.add(args.vararg.arg)
+    if args.kwarg:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _unroll_iter_is_range_len_param(iter_node: ast.expr, params: set[str], promoted: set[str]) -> bool:
+    if not (isinstance(iter_node, ast.Call) and isinstance(iter_node.func, ast.Name) and iter_node.func.id == "range"):
+        return False
+    if len(iter_node.args) != 1:
+        return False
+    arg = iter_node.args[0]
+    if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name) and arg.func.id == "len":
+        if arg.args and isinstance(arg.args[0], ast.Name):
+            name = arg.args[0].id
+            return name in params and name not in promoted
+    if isinstance(arg, ast.Name):
+        return arg.id in params and arg.id not in promoted
+    return False
+
+
 def _check_file(path: Path, project_root: Path) -> list[dict]:
     result = parse_rpython_file(path)
     if result.parser != "ast" or result.ast_tree is None:
@@ -549,6 +611,53 @@ def _check_file(path: Path, project_root: Path) -> list[dict]:
                         f"reassigned in: {', '.join(method_names)}",
                     )
                 )
+
+    # ---------------------------------------------------------------------------
+    # Pass 2 — @jit.unroll_safe unbounded-loop check
+    # (Mirrors the check in scan_jit_driver.py; both scanners emit independently
+    # so the finding surfaces regardless of which file is scanned first.)
+    # ---------------------------------------------------------------------------
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not any(_is_unroll_safe_decorator(d) for d in node.decorator_list):
+            continue
+
+        params = _unroll_param_names(node)
+        promoted = _unroll_promoted_names(node)
+
+        for child in ast.walk(node):
+            if child is node:
+                continue
+            if isinstance(child, ast.For):
+                iter_node = child.iter
+                # for item in x  where x is a bare param
+                if (
+                    isinstance(iter_node, ast.Name)
+                    and iter_node.id in params
+                    and iter_node.id not in promoted
+                ):
+                    findings.append(
+                        _finding(
+                            "unroll-safe-unbounded",
+                            "CONSIDER",
+                            "medium",
+                            child,
+                            f"@jit.unroll_safe function '{node.name}' iterates over "
+                            f"parameter '{iter_node.id}' directly — bound is unknown at trace time",
+                        )
+                    )
+                elif _unroll_iter_is_range_len_param(iter_node, params, promoted):
+                    findings.append(
+                        _finding(
+                            "unroll-safe-unbounded",
+                            "CONSIDER",
+                            "medium",
+                            child,
+                            f"@jit.unroll_safe function '{node.name}' loops over "
+                            f"range(len(...))/range(param) — bound is not a promoted constant",
+                        )
+                    )
 
     findings = deduplicate_findings(findings)
 

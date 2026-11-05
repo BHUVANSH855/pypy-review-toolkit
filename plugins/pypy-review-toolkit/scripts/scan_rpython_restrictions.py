@@ -128,6 +128,70 @@ def _check_file(path: Path, project_root: Path) -> list[dict]:
                 )
             )
 
+        # Mixed-type container check: list/set literals with heterogeneous
+        # Constant types in function bodies.  Module-scope data tables are
+        # excluded (they may be intentional app-level data, not RPython).
+        for child in ast.walk(node):
+            if isinstance(child, (ast.List, ast.Set)):
+                elts = child.elts
+                types_seen: set[type] = set()
+                for elt in elts:
+                    if isinstance(elt, ast.Constant):
+                        types_seen.add(type(elt.value))
+                if len(types_seen) > 1:
+                    findings.append(
+                        _finding(
+                            "rpython-mixed-container",
+                            "CONSIDER",
+                            "medium",
+                            child,
+                            f"{node.name}() contains a list/set literal with mixed "
+                            f"constant types {sorted(t.__name__ for t in types_seen)} "
+                            f"-- RPython's type inferencer requires all container "
+                            f"elements to have the same type; this will fail at "
+                            f"translation time",
+                            "RPYTHON_MIXED_CONTAINER",
+                        )
+                    )
+            elif isinstance(child, ast.Dict):
+                key_types: set[type] = set()
+                val_types: set[type] = set()
+                for k in child.keys:
+                    if isinstance(k, ast.Constant):
+                        key_types.add(type(k.value))
+                for v in child.values:
+                    if isinstance(v, ast.Constant):
+                        val_types.add(type(v.value))
+                if len(key_types) > 1 or len(val_types) > 1:
+                    findings.append(
+                        _finding(
+                            "rpython-mixed-container",
+                            "CONSIDER",
+                            "medium",
+                            child,
+                            f"{node.name}() contains a dict literal with mixed "
+                            f"constant types (keys: "
+                            f"{sorted(t.__name__ for t in key_types)}, "
+                            f"values: {sorted(t.__name__ for t in val_types)}) "
+                            f"-- RPython's type inferencer requires homogeneous dicts",
+                            "RPYTHON_MIXED_CONTAINER",
+                        )
+                    )
+            elif isinstance(child, ast.GeneratorExp):
+                findings.append(
+                    _finding(
+                        "rpython-generator-expr",
+                        "CONSIDER",
+                        "high",
+                        child,
+                        f"{node.name}() contains a generator expression -- RPython "
+                        f"does not support generator expressions (they require closures "
+                        f"the annotator cannot handle); use a list comprehension or "
+                        f"explicit loop instead",
+                        "RPYTHON_GENERATOR_EXPR",
+                    )
+                )
+
     for f in findings:
         f["file"] = rel
     return findings
@@ -163,9 +227,12 @@ def analyze(target: str, *, max_files: int = 0) -> dict:
 
     findings = deduplicate_findings(findings)
     envelope = build_pypy_envelope(discovery, findings, functions_analyzed=len(non_test_files))
-    envelope["pypy_info"]["restriction_checks_implemented"] = ["unbounded-kwargs"]
-    envelope["pypy_info"]["restriction_checks_not_yet_implemented"] = [
+    envelope["pypy_info"]["restriction_checks_implemented"] = [
+        "unbounded-kwargs",
         "mixed-type-containers",
+        "generator-expressions",
+    ]
+    envelope["pypy_info"]["restriction_checks_not_yet_implemented"] = [
         "generators-crossing-translation-boundary",
     ]
     envelope["pypy_info"]["eval_exec_deliberately_excluded"] = (

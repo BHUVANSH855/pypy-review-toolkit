@@ -1,12 +1,14 @@
 """Tests for scan_interp_app_boundary.py."""
 
+import shutil
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "plugins" / "pypy-review-toolkit" / "scripts"))
 
-from scan_interp_app_boundary import _check_file, _count_callers  # noqa: E402
+from scan_interp_app_boundary import _check_file, _count_callers, analyze as _analyze  # noqa: E402
 
 
 def _write(tmp_path: Path, source: str) -> Path:
@@ -118,3 +120,39 @@ def test_count_callers_does_not_match_substring():
     # 'fixedunpack_extra(' should not count as a call to 'fixedunpack'.
     source = "def fixedunpack_extra():\n    pass\nfixedunpack_extra()\n"
     assert _count_callers("fixedunpack", source) == 0
+
+
+# ---------------------------------------------------------------------------
+# W_CLASS_NO_RELEASE tests (Issue #19 — Gap 2)
+# ---------------------------------------------------------------------------
+
+_IAB_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "interp_app"
+
+
+def _run_iab_fixture(name: str):
+    """Run analyze() on a single fixture file copied to a temp dir."""
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp) / name
+        shutil.copy2(_IAB_FIXTURES / name, dest)
+        return _analyze(tmp)
+
+
+def test_w_class_open_no_close_flagged():
+    """W_* class acquiring a resource without a release method is flagged."""
+    result = _run_iab_fixture("w_class_open_no_close.py")
+    subtypes = [f["subtype"] for f in result.get("findings", [])]
+    assert "W_CLASS_NO_RELEASE" in subtypes, (
+        f"Expected W_CLASS_NO_RELEASE in {subtypes}"
+    )
+
+
+def test_w_class_open_with_close_no_finding():
+    """W_* class that has a descr_close method is NOT flagged."""
+    result = _run_iab_fixture("w_class_open_with_close.py")
+    nr_findings = [
+        f for f in result.get("findings", [])
+        if f.get("subtype") == "W_CLASS_NO_RELEASE"
+    ]
+    assert nr_findings == [], (
+        f"Did not expect W_CLASS_NO_RELEASE for class with descr_close; got {nr_findings}"
+    )

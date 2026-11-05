@@ -1,7 +1,9 @@
 """Tests for scan_immutability_contracts.py."""
 
 import ast
+import shutil
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -19,6 +21,7 @@ import scan_immutability_contracts as scanner  # noqa: E402
 from scan_immutability_contracts import (
     _is_guarded_helper_lazy_init,
     _is_lazy_initialized_field,
+    analyze as _analyze,
 )
 
 
@@ -292,4 +295,39 @@ def test_non_null_field_in_guarded_lazy_init_group_is_detected():
         node,
         "nostruct_nargs",
         ["prepare"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# UNROLL_SAFE_UNBOUNDED tests (Issue #19 — Gap 4)
+# ---------------------------------------------------------------------------
+
+_IMM_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "immutability"
+
+
+def _run_imm_fixture(name: str):
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp) / name
+        shutil.copy2(_IMM_FIXTURES / name, dest)
+        return _analyze(tmp)
+
+
+def test_unroll_safe_unbounded_range_len_flagged():
+    """@jit.unroll_safe function with range(len(lst)) but no jit.promote() is flagged."""
+    result = _run_imm_fixture("unroll_safe_unbounded.py")
+    types = [f["type"] for f in result.get("findings", [])]
+    assert "unroll-safe-unbounded" in types, (
+        f"Expected unroll-safe-unbounded in {types}"
+    )
+
+
+def test_unroll_safe_with_promote_not_flagged():
+    """@jit.unroll_safe function that calls jit.promote() on the length is NOT flagged."""
+    result = _run_imm_fixture("unroll_safe_promoted.py")
+    unbounded = [
+        f for f in result.get("findings", [])
+        if f.get("type") == "unroll-safe-unbounded"
+    ]
+    assert unbounded == [], (
+        f"Did not expect unroll-safe-unbounded for promoted loop; got {unbounded}"
     )
