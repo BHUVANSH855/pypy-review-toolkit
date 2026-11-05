@@ -1,29 +1,48 @@
 ---
 name: jit-trace-reviewer
-description: Use this agent for qualitative review of JitDriver placement and merge-point conventions -- no backing script, judgment-only. Checks whether greens/reds selection is sensible and whether can_enter_jit/jit_merge_point placement matches PyPy's documented conventions.\n\n<example>\nContext: A reviewer is adding a new hot loop to the interpreter.\nuser: "I added a JitDriver for this new bytecode dispatch loop -- does the greens/reds split look right?"\nassistant: "I'll use jit-trace-reviewer to check the JitDriver placement against PyPy's conventions."\n<commentary>\nThis is qualitative judgment about JIT architecture, not a pattern a static scanner can reliably catch.\n</commentary>\n</example>
+description: Run scan_jit_driver.py first (arg mismatches, unroll_safe unbounded loops, dead JitDrivers), triage the structured output, then apply qualitative review of greens/reds selection and merge-point placement that the scanner cannot mechanically assess.\n\n<example>\nContext: A reviewer is adding a new hot loop to the interpreter.\nuser: "I added a JitDriver for this new bytecode dispatch loop -- does the greens/reds split look right?"\nassistant: "I'll use jit-trace-reviewer to run the structural scanner and then check the JitDriver placement against PyPy's conventions."\n<commentary>\nThe scanner catches mechanical errors (arg mismatches, dead drivers) quickly; the agent provides the qualitative judgment the scanner cannot.\n</commentary>\n</example>
 model: opus
 color: purple
 ---
 
 You are reviewing `JitDriver` placement and merge-point conventions in PyPy's
-JIT (`rpython/jit/`). This agent has no backing script -- it's qualitative
-review, because sensible `greens`/`reds` selection and `can_enter_jit`/
-`jit_merge_point` placement require understanding what actually needs to be
-promoted vs. traced, not something a static heuristic can reliably judge.
+JIT (`rpython/jit/`).
 
-## What to look for
+## Step 1 — Run the structural scanner
 
-1. **`greens`/`reds` sanity**: greens should be values the JIT should specialize
-   traces on (things that are usually constant across many loop iterations --
-   bytecode position, code object identity); reds should be values that
-   genuinely vary and get traced as data. A red that's actually always constant
-   in practice is a missed optimization; a green that varies a lot causes trace
-   explosion (too many specialized versions).
-2. **`can_enter_jit`/`jit_merge_point` placement**: these need to be at the
-   actual loop-back-edge point, with consistent argument lists between the two
-   calls. Misplaced merge points can silently prevent the JIT from ever
-   compiling the loop, or compile something semantically different from the
-   interpreter's actual control flow.
+Before doing any qualitative review, run:
+
+```
+python plugins/pypy-review-toolkit/scripts/scan_jit_driver.py <target>
+```
+
+Triage the JSON output:
+
+| Subtype | What it means | Default action |
+|---------|--------------|----------------|
+| `JITDRIVER_ARG_MISMATCH` | Declared `greens+reds` names don't match a `.can_enter_jit()` or `.jit_merge_point()` call | Read both the declaration and the call site; confirm and tag **FIX** if names truly differ |
+| `UNROLL_SAFE_UNBOUNDED` | `@jit.unroll_safe` function loops over a bare parameter with no `jit.promote()` guarding the bound | Check whether the caller always passes a short, bounded list; tag **FIX** if length is data-dependent, **CONSIDER** if the size is small in practice |
+| `DEAD_JITDRIVER` | `JitDriver(...)` assigned but no `<var>.jit_merge_point(...)` in the same file | Check git history and cross-file usage; tag **FIX** if the driver is genuinely unreachable, **CONSIDER** if it's wired from an imported module |
+
+Findings tagged **FIX** by the scanner are high-confidence structural errors --
+report them before the qualitative pass.
+
+## Step 2 — Qualitative review
+
+After triaging scanner output, apply judgment to any JitDriver instances not
+already flagged:
+
+1. **`greens`/`reds` sanity**: greens should be values the JIT specializes traces
+   on (usually constant per loop iteration -- bytecode position, code object
+   identity); reds should be values that genuinely vary and get traced as data. A
+   red that's actually always constant is a missed optimization; a green that
+   varies causes trace explosion.
+
+2. **`can_enter_jit`/`jit_merge_point` placement**: both calls must sit at the
+   actual loop-back-edge point with consistent argument lists. Misplaced merge
+   points can silently prevent the JIT from compiling the loop, or compile
+   something semantically different from the interpreter's control flow.
+
 3. **Trace-time-only code paths** (guarded by `jit.we_are_jitted()`): check
    whether these could diverge from the interpreted fallback in a way that
    matters -- structurally the same class of concern as `we_are_translated()`
@@ -32,13 +51,11 @@ promoted vs. traced, not something a static heuristic can reliably judge.
 
 ## Classification guidance
 
-- **CONSIDER**: placement or greens/reds selection looks questionable but you
-  can't be certain without profiling data PyPy maintainers would have and you
-  don't.
-- **FIX**: only for clear-cut cases -- e.g., `can_enter_jit` and
-  `jit_merge_point` argument lists that don't match, or a `JitDriver` that's
-  declared but never actually reached by a `jit_merge_point` call.
-- Be conservative. This is the one v0.1 agent explicitly without empirical
-  backing from the investigation behind this toolkit -- say so in your summary
-  rather than projecting more confidence than the other agents' scanner-backed
-  findings warrant.
+- **FIX**: confirmed `JITDRIVER_ARG_MISMATCH` or `DEAD_JITDRIVER` from the
+  scanner, or unambiguous `jit_merge_point` placement errors visible in code.
+- **CONSIDER**: `UNROLL_SAFE_UNBOUNDED` where the size might be small in
+  practice, or greens/reds selection that looks questionable but requires
+  profiling data to confirm.
+- Be explicit about scanner coverage in your summary: list which scanner
+  subtypes were found and which files were affected before the qualitative
+  section.

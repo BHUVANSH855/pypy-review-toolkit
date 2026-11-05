@@ -58,10 +58,14 @@ Run `scan_interp_app_boundary.py` and `scan_rpython_restrictions.py`. Dispatch
 restriction scanner's narrow scope (kwargs only) when reporting — do not imply
 broader coverage than exists.
 
-### Phase 5 — Qualitative
+### Phase 5 — JIT Structural + Qualitative
 
-Dispatch `jit-trace-reviewer` (no backing script — judgment only, and should be
-reported with appropriately lower confidence than scanner-backed findings).
+Run `scan_jit_driver.py` against the target. Dispatch `jit-trace-reviewer`,
+which will triage the scanner output first (arg mismatches, unbounded
+`@jit.unroll_safe` loops, dead `JitDriver` instances) and then apply qualitative
+judgment on greens/reds selection and merge-point placement that the scanner
+cannot assess mechanically. Scanner-backed findings should be reported with the
+same confidence level as other scanner-backed agents.
 
 ### Phase 5b — GC-Hint Discipline
 
