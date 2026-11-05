@@ -532,3 +532,75 @@ def test_unrecognized_control_flow_difference_remains_fix():
 
     assert classification == "FIX"
     assert reason == "arms have inconsistent return/raise control-flow shape"
+
+
+# ---------------------------------------------------------------------------
+# DEGRADED_PARSE_SKIP tests (Issue #19 — Gap 1)
+# ---------------------------------------------------------------------------
+
+import shutil
+import tempfile
+import unittest.mock as mock
+
+
+_SCRIPTS = Path(__file__).resolve().parent.parent / "plugins" / "pypy-review-toolkit" / "scripts"
+_TD_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "translated_divergence"
+
+sys.path.insert(0, str(_SCRIPTS))
+import scan_translated_divergence as _td_m
+import pypy_utils as _pu
+
+
+def _run_td_fixture(name: str):
+    """Copy fixture to a temp dir outside 'tests/' so analyze() doesn't filter it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp) / name
+        shutil.copy2(_TD_FIXTURES / name, dest)
+        return _td_m.analyze(tmp)
+
+
+def test_degraded_parse_skip_populates_skipped_files():
+    """When tree-sitter is unavailable, a file that fails ast.parse() is listed in skipped_files."""
+    with mock.patch.object(_pu, "_TS_AVAILABLE", False):
+        result = _run_td_fixture("syntax_error_file.py")
+    skipped = result.get("skipped_files", [])
+    assert len(skipped) >= 1, f"Expected at least one skipped file; got {skipped}"
+    assert any("syntax_error_file" in s for s in skipped), (
+        f"syntax_error_file.py not in skipped_files: {skipped}"
+    )
+
+
+def test_degraded_parse_skip_finding_emitted():
+    """A DEGRADED_PARSE_SKIP INFO finding is emitted for each skipped file."""
+    with mock.patch.object(_pu, "_TS_AVAILABLE", False):
+        result = _run_td_fixture("syntax_error_file.py")
+    skip_findings = [
+        f for f in result.get("findings", [])
+        if f.get("subtype") == "DEGRADED_PARSE_SKIP"
+    ]
+    assert len(skip_findings) >= 1, (
+        f"Expected at least one DEGRADED_PARSE_SKIP finding; got {skip_findings}"
+    )
+    assert skip_findings[0]["classification"] == "INFO"
+
+
+def test_degraded_parse_skip_files_skipped_in_summary():
+    """The summary block includes a files_skipped integer count."""
+    with mock.patch.object(_pu, "_TS_AVAILABLE", False):
+        result = _run_td_fixture("syntax_error_file.py")
+    files_skipped = result.get("summary", {}).get("files_skipped")
+    assert isinstance(files_skipped, int), (
+        f"Expected summary.files_skipped to be an int; got {files_skipped!r}"
+    )
+    assert files_skipped >= 1
+
+
+def test_no_skip_when_ast_parses_ok():
+    """A syntactically valid Python 3 file is not added to skipped_files."""
+    src = "def f():\n    return 1\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "valid.py").write_text(src, encoding="utf-8")
+        with mock.patch.object(_pu, "_TS_AVAILABLE", False):
+            result = _td_m.analyze(tmp)
+    skipped = result.get("skipped_files", [])
+    assert skipped == [], f"Valid file should not be skipped; got {skipped}"
