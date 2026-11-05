@@ -63,6 +63,33 @@ broader coverage than exists.
 Dispatch `jit-trace-reviewer` (no backing script — judgment only, and should be
 reported with appropriately lower confidence than scanner-backed findings).
 
+### Phase 5b — GC-Hint Discipline
+
+Run `scan_gc_hints.py` against the verified PyPy checkout identified in Phase 1.
+
+```bash
+python plugins/pypy-review-toolkit/scripts/scan_gc_hints.py "$PYPY_ROOT"
+```
+
+Dispatch `gc-hint-auditor` for each finding. The scanner covers two classes
+of GC-discipline violation:
+
+- **`NO_COLLECT_VIOLATION` / `NO_COLLECT_SUSPECT`**: a function decorated
+  with `@rgc.no_collect` or `@rgc.no_collect_with_trace` contains a direct
+  GC-managed allocation (`lltype.malloc()` without `flavor='raw'`, a `W_*`
+  constructor call, a list/dict literal, or an allocator-named callee).
+  Findings reachable from JIT merge points are higher priority than those
+  in interpreter startup paths.
+- **`RAW_ALLOC_NO_TRACE_HOOK` / `RAW_ALLOC_SUSPECT`**: a `W_*` class stores
+  raw memory (`lltype.malloc(flavor='raw')` or `ffi.new(...)`) in `self.*`
+  without registering a custom trace hook via
+  `rgc.register_custom_trace_hook`.  The hook is required only when the raw
+  memory contains embedded GC-managed pointers; findings on structs of
+  pure C-primitive scalars are ACCEPTABLE.
+
+If `pypy_info.degraded_parse_mode` is set, note that ~8.5% of the GC layer
+was skipped (Python 2 syntax, tree-sitter not available).
+
 ### Phase 6 — CFFI and Guard-Consistency Triage
 
 Run each scanner from the toolkit repository against the recognized PyPy
